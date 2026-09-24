@@ -28,7 +28,7 @@ EAR_BASE, EAR_R, EAR_LEN = _ear_frame()
 
 
 EAR_Y0 = -0.035        # base sinks into the head
-EAR_FLAT = 0.84        # front-back squash of the ear's round cross-section
+EAR_FLAT = 0.62        # front-back squash: a broad leaf-like shell, not a round horn
 EAR_TIP = 0.020        # radius of the softly rounded tip
 
 
