@@ -231,7 +231,7 @@ class Lib:
             p.set(f"thigh_{s}", x=-45, z=sx * 28)
             p.set(f"shin_{s}", x=-10)
             p.set(f"foot_{s}", x=-10)
-        p.set("tail_1", x=0, z=10)                         # lying on the floor beside the fox
+        p.set("tail_1", x=0, z=15)                         # lying on the floor beside the fox
         tail_curve(p, x=-10, z=0, start=2, falloff=0.95)
         return p
 
