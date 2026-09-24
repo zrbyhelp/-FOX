@@ -27,7 +27,9 @@ PAIRS = [
     ("Arm_L", "ScarfFlap", 0.008, ("upperArm_L", 0.10)),
     ("Arm_R", "ScarfFlap", 0.008, ("upperArm_R", 0.10)),
     ("Arm_L", "Arm_R", 0.012, None),
-    ("Tail", "Body", 0.020, ("tail_1", 0.12)),
+    # the tail root is sunk into the rump; seated, it pivots down onto the floor and the first
+    # ~12.5 cm stay inside the rump (hidden between it and the floor)
+    ("Tail", "Body", 0.020, ("tail_1", 0.125)),
     ("Tail", "Leg_L", 0.010, None),
     ("Tail", "Leg_R", 0.010, None),
     ("Leg_L", "Leg_R", 0.008, None),

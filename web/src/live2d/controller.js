@@ -23,7 +23,6 @@ const FALLBACK = {
   Shrug: ['Wave'],
   Jump: ['Happy', 'Wave'],
   LookBack: ['Wave'],
-  Dance: ['Happy', 'Wave'],
 };
 
 export class Controller {
@@ -51,7 +50,7 @@ export class Controller {
     this.exitStep = null; // Exiting: 'wave' | 'pop'
     player.on((type, tr, data) => {
       if (type === 'end' && tr === this.cur.track) this.onFinished();
-      if (type === 'event') this.emit('motionEvent', { name: data.name, data: data.data, clip: tr.name });
+      if (type === 'event') this.emit('motionEvent', { name: data.name, clip: tr.name });
     });
   }
 

@@ -209,8 +209,8 @@ export class DozeFx {
 }
 
 // ---------------------------------------------------------------------------------------------
-// Music notes popping beside the head on the beats of the Dance clip (same beats as the 2D
-// Dance motion's 'note' events). Skipped with prefers-reduced-motion.
+// Music notes popping beside the head on the beats of the Dance clip (6 s, beat 0.6 s: the four
+// groove beats with a paw up, the turn, the cheer). Skipped with prefers-reduced-motion.
 
 // [clip s, side]: +1 = the fox's left
 const NOTE_BEATS = [[0.7, 1], [1.3, -1], [1.9, 1], [2.5, -1], [3.3, 1], [4.2, -1], [4.8, 1]];

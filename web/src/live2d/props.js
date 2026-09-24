@@ -237,48 +237,6 @@ function drawZ(size = 96) {
   return c;
 }
 
-/** ♪ (eighth note) or ♫ (beamed pair) in a 96 x 96 box, canvas y down. */
-function notePath(beamed) {
-  const p = new Path2D();
-  const head = (x, y) => p.ellipse(x, y, 13, 9.5, -0.4, 0, TAU);
-  if (beamed) {
-    head(25, 72);
-    head(63, 64);
-    p.rect(31.5, 22, 6, 49);
-    p.rect(69.5, 14, 6, 49);
-    p.moveTo(31.5, 20);
-    p.lineTo(75.5, 11);
-    p.lineTo(75.5, 23);
-    p.lineTo(31.5, 32);
-    p.closePath();
-  } else {
-    head(38, 70);
-    p.rect(44.5, 14, 6, 55);
-    p.moveTo(44.5, 12);
-    p.bezierCurveTo(50, 28, 74, 30, 66, 58);
-    p.bezierCurveTo(66, 42, 58, 36, 50.5, 34);
-    p.closePath();
-  }
-  return p;
-}
-
-function drawNote(beamed, size = 96) {
-  const c = canvas(size, size);
-  const g = c.getContext('2d');
-  g.scale(size / 96, size / 96);
-  const path = notePath(beamed);
-  g.lineJoin = 'round';
-  g.lineWidth = 9;
-  g.strokeStyle = '#ffffff';
-  g.stroke(path);
-  const gr = g.createLinearGradient(0, 10, 0, 86);
-  gr.addColorStop(0, '#ff9a5c');
-  gr.addColorStop(1, '#e0672a');
-  g.fillStyle = gr;
-  g.fill(path);
-  return c;
-}
-
 // ---- logo ---------------------------------------------------------------------------------------
 
 export const LOGO_POS = [-0.6, 0.56];
@@ -652,46 +610,6 @@ export class DozeFx extends Particles {
   dispose() {
     super.dispose();
     this.tex.dispose();
-  }
-}
-
-/** Music notes popping beside the head on the dance beats (the Dance motion's 'note' events). */
-export class NoteFx extends Particles {
-  constructor(puppet) {
-    const tex = [makeTexture(drawNote(false), puppet.anisotropy), makeTexture(drawNote(true), puppet.anisotropy)];
-    super(puppet, tex[0], 6, 420, 'Note');
-    this.pool.forEach((p, i) => { p.mesh.material.uniforms.map.value = tex[i % 2]; });
-    this.tex = tex;
-    this.shown = 0;
-  }
-
-  /** A note beside the head centre (hx, hy): side +1 = screen right, -1 = left (0 = above). */
-  pop(hx, hy, side = 0) {
-    const glyph = this.shown++ % 2; // ♪ ♫ in turn
-    const p = this.pool.find((q) => q.life < 0 && q.seed % 2 === glyph) || this.pool.reduce((a, b) => (a.life > b.life ? a : b));
-    Object.assign(p, { life: 0, x: hx + side * 0.4, y: hy + (side ? 0.16 : 0.34), kind: side || (glyph ? 1 : -1) });
-    p.mesh.visible = true;
-  }
-
-  update(dt) {
-    for (const p of this.pool) {
-      if (p.life < 0) continue;
-      const dur = 1.5;
-      p.life += dt / dur;
-      if (p.life >= 1) { p.life = -1; p.mesh.visible = false; continue; }
-      const t = p.life * dur;
-      const s = 0.09 * easeOutBack(clamp(t / 0.28, 0, 1), 2.2);
-      const m = p.mesh;
-      m.position.set(p.x + p.kind * 0.06 * p.life + 0.018 * Math.sin(t * 6 + p.seed), p.y + 0.2 * easeOutCubic(p.life), 0);
-      m.scale.set(s, s, 1);
-      m.rotation.z = -p.kind * 0.12 + 0.2 * Math.sin(t * 5 + p.seed);
-      m.material.uniforms.opacity.value = 1 - smooth(clamp((p.life - 0.55) / 0.45, 0, 1));
-    }
-  }
-
-  dispose() {
-    super.dispose();
-    for (const t of this.tex) t.dispose();
   }
 }
 

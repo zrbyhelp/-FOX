@@ -12,8 +12,6 @@
 //    hover logo -> Present, click logo -> Reach + logo activation, double-click -> Jump,
 //    click tail -> LookBack, click ear -> ear flick, drag tail, typing keys -> Typing + keyboard
 //    (hidden again after 1.8 s)
-// 3b. Dance (toolbar 跳舞): groove -> turn -> cheer -> bow in fixed steps, notes on the beats, back
-//    to Idle; groove / spin / cheer screenshots -> ../build/snaps/dance
 // 4. idle timers (shortened with the debug override): Idle -> Sitting/Sit_Think -> Sit_Doze
 // 5. start/stop x3 and create/dispose x3 with no errors
 import { chromium } from 'playwright';
@@ -27,7 +25,6 @@ const webDir = path.resolve(here, '..');
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); if (i < 0) return d; const v = args[i + 1]; args.splice(i, 2); return v; };
 const outDir = path.resolve(webDir, opt('--out', '../build/snaps/live2d'));
-const danceDir = path.resolve(webDir, opt('--dance-out', '../build/snaps/dance'));
 const url = opt('--url', null);
 const W = Number(opt('--width', '1000'));
 const H = Number(opt('--height', '760'));
@@ -81,7 +78,7 @@ try {
       .filter((k) => typeof a[k] !== 'function');
   });
   check('API surface complete', api.length === 0, api.length ? `missing ${api}` : '');
-  const hasAll = await page.evaluate(() => ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Dance', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp']
+  const hasAll = await page.evaluate(() => ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp']
     .filter((n) => !window.__live2d.has(n)));
   check('has() every spec clip', hasAll.length === 0, hasAll.join(','));
   const intro = await info();
@@ -105,7 +102,6 @@ try {
     ['Reach', 1.4, 'OneShot', 'Reach'],
     ['Shrug', 1.1, 'OneShot', 'Shrug'],
     ['Jump', 0.57, 'OneShot', 'Jump'],
-    ['Dance', 1.3, 'OneShot', 'Dance'],
     ['LookBack', 1.3, 'OneShot', 'LookBack'],
     ['Pet', 1.0, 'Petting', 'Pet'],
     ['Sit_Think', 2.2, 'Sitting', 'Sit_Think'],
@@ -352,51 +348,6 @@ try {
     const stopped = await waitFor(() => window.__live2d.debug.info().keyboard === 'hidden' && window.__live2d.state === 'Idle', null, 20000);
     check('keyboard hides after 1.8 s without keys', stopped, await info());
   }
-  // Dance: the toolbar button plays it; then the whole choreography in fixed 60 Hz steps: sway
-  // towards the raised paw (L R L R), a hop with a full (mirrored) turn and the arms out, a cheer
-  // with both paws up shaking, ^^ eyes throughout, a note per beat, back to Idle
-  await reset();
-  {
-    fs.mkdirSync(danceDir, { recursive: true });
-    await page.mouse.move(W - 5, 5);
-    await page.click('button[data-trigger="Dance"]');
-    const started = await waitFor(() => window.__live2d.clip === 'Dance' && window.__live2d.state === 'OneShot');
-    check('toolbar 跳舞 -> Dance', started, await info());
-    const r = await page.evaluate(() => {
-      const d = window.__live2d.debug;
-      d.freeze(true);
-      d.pose('Dance', 0); // one 1/60 step
-      const n0 = d.info().notesShown;
-      const tr = d.trace(6.6, ['ParamRootX', 'ParamArmLA', 'ParamArmRA', 'ParamArmLB', 'ParamSpin', 'ParamEyeSmile']);
-      const k = (t) => Math.round(t * 60) - 2; // sample k is taken (k + 2) / 60 s into the dance
-      const at = (t) => ({ rootX: tr.ParamRootX[k(t)], armL: tr.ParamArmLA[k(t)], armR: tr.ParamArmRA[k(t)], spin: tr.ParamSpin[k(t)] });
-      const span = (name, t0, t1) => tr[name].slice(k(t0), k(t1));
-      const smile = span('ParamEyeSmile', 1.2, 5.2); // eased in (expression easing, fade-in)
-      const shake = span('ParamArmLB', 4.1, 5.0);
-      const mean = shake.reduce((a, b) => a + b, 0) / shake.length;
-      const i = d.info();
-      d.pose('Dance', 3.3); // halfway round: the rig shows the mirror image
-      return {
-        at: { g1: at(0.7), g2: at(1.3), g3: at(1.9), g4: at(2.5), spin: at(3.3), cheer: at(4.45) },
-        spinMax: Math.max(...tr.ParamSpin), scaleX: d.rig.T.root[0],
-        minSmile: Math.min(...smile), shakeSd: Math.sqrt(shake.reduce((a, b) => a + (b - mean) ** 2, 0) / shake.length),
-        notes: i.notesShown - n0, end: `${i.state}/${i.clip}`,
-      };
-    });
-    const g = r.at;
-    const groove = [g.g1, g.g3].every((x) => x.rootX > 0.02 && x.armL > x.armR + 30) && [g.g2, g.g4].every((x) => x.rootX < -0.02 && x.armR > x.armL + 30);
-    check('Dance groove: sway towards the raised paw, L R L R', groove, Object.fromEntries(['g1', 'g2', 'g3', 'g4'].map((n) => [n, { x: +g[n].rootX.toFixed(3), L: Math.round(g[n].armL), R: Math.round(g[n].armR) }])));
-    check('Dance: hop with a full turn (mirrored halfway), arms out', r.spinMax > 350 && r.scaleX < -0.9 && g.spin.armL > 40 && g.spin.armR > 40,
-      { spinMax: +r.spinMax.toFixed(1), at3_3s: { spin: +g.spin.spin.toFixed(1), rootScaleX: +r.scaleX.toFixed(2) } });
-    check('Dance cheer: both paws up, shaking', g.cheer.armL > 40 && g.cheer.armR > 40 && r.shakeSd > 4, { armL: Math.round(g.cheer.armL), armR: Math.round(g.cheer.armR), shakeSd: +r.shakeSd.toFixed(1) });
-    check('Dance: ^^ eyes throughout, a note per beat, back to Idle', r.minSmile > 0.9 && r.notes === 7 && r.end === 'Idle/Idle', { minSmile: +r.minSmile.toFixed(2), notes: r.notes, end: r.end });
-    for (const [t, name] of [[1.3, 'groove'], [3.15, 'spin_edge'], [3.3, 'spin'], [4.45, 'cheer']]) {
-      await page.evaluate((tt) => window.__live2d.debug.pose('Dance', tt), t);
-      await page.screenshot({ path: path.join(danceDir, `2d_dance_${name}.png`) });
-    }
-    await reset(); // Idle again, running
-  }
-
   // click events + onEvent
   {
     const evs = await page.evaluate(() => new Promise((resolve) => {

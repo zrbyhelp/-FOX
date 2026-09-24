@@ -106,7 +106,8 @@ async function main() {
   if (!noUI) {
     ui = createUI({
       trigger: (name) => (mode === '2d' ? trigger2D(name) : interaction.trigger(name)),
-      has: (name) => (mode === '2d' && twoD ? twoD.app.has(name) : animator.has(name)), // re-read on a mode switch
+      // re-read on a mode switch: the 2D puppet has its own set (no Dance)
+      has: (name) => (mode === '2d' && twoD ? twoD.app.has(name) : animator.has(name)),
       onFollow: (on) => {
         follow = on;
         interaction.followPointer = on;
@@ -275,7 +276,7 @@ async function main() {
   async function ensure2D() {
     if (twoD) return twoD;
     const app2d = await createLive2DApp({
-      container: stage2d, spec, insetBottom: insetBottom(), keyboard: true, debug, reducedMotion,
+      container: stage2d, spec, insetBottom: insetBottom(), keyboard: true, debug,
       seed: debug ? 1 : undefined,
     });
     const t = { app: app2d, intent: null, typing: false, time: 0, raf: 0, last: 0 };

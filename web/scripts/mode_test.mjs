@@ -5,9 +5,9 @@
 // Checks: the page load pops the 3D fox in (+ Wave) with its logo; the toolbar switch shows the
 // 2D puppet (popping in + waving the same way, the logo with it) and pauses the 3D scene; toolbar
 // buttons, speech bubbles, the follow toggle and the keyboard drive the 2D fox; 离场 / 回来 take
-// the 2D logo along; 跳舞 dances in 2D even when the 3D model has no Dance clip (and the button
-// follows the mode); ?mode=2d starts in 2D; switching back resumes the 3D fox; no console errors.
-// Screenshots -> ../build/snaps/mode/ (+ the 2D dance on the main page -> ../build/snaps/dance/).
+// the 2D logo along; 跳舞 (3D Dance clip) is enabled iff the 3D model has the clip and disabled in
+// 2D; ?mode=2d starts in 2D; switching back resumes the 3D fox; no console errors.
+// Screenshots -> ../build/snaps/mode/.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -17,9 +17,7 @@ import { fileURLToPath } from 'node:url';
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(here, '..');
 const outDir = path.resolve(webDir, '../build/snaps/mode');
-const danceDir = path.resolve(webDir, '../build/snaps/dance');
 fs.mkdirSync(outDir, { recursive: true });
-fs.mkdirSync(danceDir, { recursive: true });
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
 const query = opt('--query', '');
@@ -110,37 +108,9 @@ try {
   await sleep(600);
   await page.screenshot({ path: path.join(outDir, '2d_happy_bubble.png') });
 
-  // toolbar 跳舞 -> the 2D Dance (enabled in 2D whatever the 3D model has), shared bubble,
-  // highlighted; the rest of it in fixed steps -> back to Idle
-  await page.waitForFunction(() => window.__fox.live2d.state === 'Idle', null, { timeout: 30000 }).catch(() => {});
+  // 跳舞 is 3D only: disabled while the 2D puppet is shown
   const d2 = await danceBtn();
-  record('2D: 跳舞 enabled', d2 && !d2.disabled, JSON.stringify(d2));
-  await page.locator('button[data-trigger="Dance"]').click();
-  const dance = await waitFor(page, () => window.__fox.live2d.clip === 'Dance' && window.__fox.live2d.state === 'OneShot');
-  record('toolbar 跳舞 plays Dance in 2D', dance, await page.evaluate(() => `${window.__fox.live2d.state}/${window.__fox.live2d.clip}`));
-  const danceBubble = await waitFor(page, () => {
-    const b = document.querySelector('.bubble');
-    return b && !b.hidden && b.textContent.includes('一起跳舞吧~♪');
-  });
-  const danceActive = await waitFor(page, () => document.querySelector('button[data-trigger="Dance"]').classList.contains('is-active'));
-  record('2D Dance: bubble 一起跳舞吧~♪ + 跳舞 highlighted', danceBubble && danceActive, `bubble=${danceBubble} active=${danceActive}`);
-  const groove = await page.evaluate(() => {
-    const d = window.__fox.live2d.debug;
-    d.freeze(true);
-    const t = d.player.current?.t ?? 0;
-    if (t < 1.3) d.advance(1.3 - t); // mid-groove, the right paw up
-    return { t, notes: d.info().notesShown };
-  });
-  await page.screenshot({ path: path.join(danceDir, '2d_dance_main_page.png') });
-  const done = await page.evaluate(() => {
-    const d = window.__fox.live2d.debug;
-    const i = d.advance(5.2);
-    d.freeze(false);
-    return { state: i.state, clip: i.clip, notes: i.notesShown };
-  });
-  record('2D Dance -> back to Idle, notes popped', done.state === 'Idle' && done.clip === 'Idle' && done.notes >= 7, `${done.state}/${done.clip}, ${done.notes} notes (started ${groove.t.toFixed(2)} s in)`);
-  const unlit = await waitFor(page, () => !document.querySelector('button[data-trigger="Dance"]').classList.contains('is-active'));
-  record('跳舞 highlight cleared after the dance', unlit);
+  record('2D: 跳舞 disabled (the 2D puppet has no Dance)', d2 && d2.disabled, JSON.stringify(d2));
 
   // keyboard -> 2D typing (the 3D typing controller is paused)
   await page.waitForFunction(() => window.__fox.live2d.state === 'Idle', null, { timeout: 30000 }).catch(() => {});

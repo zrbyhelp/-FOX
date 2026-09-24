@@ -180,7 +180,7 @@ class Lib:
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
             # tips down and in, orange ends underneath (ref 1)
-            self.arm(p, s, (sx * 0.044, -0.215, 0.300), aim=(sx * -0.45, -0.45, -0.75), **kw)
+            self.arm(p, s, (sx * 0.050, -0.215, 0.300), aim=(sx * -0.45, -0.45, -0.75), **kw)
         return p
 
     def heart(self, p=None):
@@ -188,13 +188,13 @@ class Lib:
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
             # paws meet at the chest, tips touching (the web adds a pink heart that pops out)
-            self.arm(p, s, (sx * 0.048, -0.222, 0.296), aim=(sx * -0.62, -0.40, -0.62), palm=(-sx * 0.9, 0.0, 0.2))
+            self.arm(p, s, (sx * 0.052, -0.222, 0.296), aim=(sx * -0.62, -0.40, -0.62), palm=(-sx * 0.9, 0.0, 0.2))
         return p
 
     def paw_chest(self, p, side, low=False):
         sx = 1 if side == "L" else -1
         if low:   # resting on the belly
-            return self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2))
+            return self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2), margin=-0.002)
         return self.arm(p, side, (sx * 0.055, -0.218, 0.298), aim=(sx * -0.30, -0.30, 1.0))
 
     def wave_up(self, p, side="L", swing=0.0):
@@ -646,7 +646,6 @@ def make_clips(rig: Rig):
     L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016)  # room to nod
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
-    doze.set("tail_1", x=0, z=13)                    # the leaning, breathing body needs a bit more room
     def doze_ov(t, p):
         ph = 2 * math.pi * t / 4.0
         breathe(t, p, rate=0.25, amt=1.3)
