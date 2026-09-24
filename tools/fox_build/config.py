@@ -67,22 +67,22 @@ def linear(name_or_hex: str) -> np.ndarray:
 # --------------------------------------------------------------------------------------
 P = {
     # head (big, wide ellipsoid; pivot is low at neck centre)
-    "head_center": (0.0, 0.0, 0.625),
+    "head_center": (0.0, 0.0, 0.628),
     "head_radii": (0.255, 0.215, 0.215),     # half width (x), half depth (y), half height (z)
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
     "ear_base": (0.170, 0.012, 0.790),
-    "ear_tip": (0.330, 0.040, 0.955),
-    "ear_base_width": 0.290,
-    "ear_thickness": 0.072,
+    "ear_tip": (0.308, 0.036, 0.930),
+    "ear_base_width": 0.262,
+    "ear_thickness": 0.088,
     # face anchors (x, z); y is projected onto the head surface at build time
-    "eye_xz": (0.110, 0.597),
-    "eye_size": (0.060, 0.076),               # width, height of the open eye
-    "brow_xz": (0.112, 0.672),
+    "eye_xz": (0.119, 0.590),
+    "eye_size": (0.067, 0.080),               # width, height of the open eye
+    "brow_xz": (0.121, 0.668),
     "nose_xz": (0.0, 0.567),
     "mouth_xz": (0.0, 0.535),
-    "blush_xz": (0.165, 0.545),
+    "blush_xz": (0.176, 0.540),
     # body (pear)
     "body_bottom_z": 0.075,
     "body_top_z": 0.47,
@@ -92,10 +92,10 @@ P = {
     # neck / scarf
     "scarf_z": 0.405,
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
-    "scarf_tube_radius": (0.044, 0.040),     # vertical, radial half-thickness
+    "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.057,
-    "paw_radius": 0.064,
+    "arm_radius": 0.063,
+    "paw_radius": 0.069,
     "leg_radius": 0.066,
     "foot_size": (0.126, 0.158, 0.080),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]

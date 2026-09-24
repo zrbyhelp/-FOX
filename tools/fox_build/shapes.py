@@ -40,7 +40,7 @@ def _tri2d(px, py, qx, qy):
     return -np.sqrt(d1) * np.sign(d2)
 
 
-EAR_ROUND = 0.060      # 2D corner rounding (rounded tip)
+EAR_ROUND = 0.055      # 2D corner rounding (rounded tip)
 EAR_Y0 = -0.035        # base sinks into the head
 
 
@@ -50,7 +50,11 @@ def _ear_outline(q, inset=0.0, y0=EAR_Y0):
     apex = EAR_LEN + EAR_ROUND * 0.55 - inset * 1.9
     qx = hw - EAR_ROUND - inset * 0.8
     qy = apex - y0
-    return _tri2d(q[:, 0], apex - q[:, 1], qx * (1 - EAR_ROUND / qy), qy - EAR_ROUND) - EAR_ROUND
+    tri = _tri2d(q[:, 0], apex - q[:, 1], qx * (1 - EAR_ROUND / qy), qy - EAR_ROUND) - EAR_ROUND
+    # blend with an ellipse so the sides bulge slightly (rounded-leaf ear like the art)
+    ry = (apex - y0) / 2; rx = hw * 0.78 - inset
+    e = (np.sqrt((q[:, 0] / rx) ** 2 + ((q[:, 1] - (y0 + ry)) / ry) ** 2) - 1.0) * min(rx, ry)
+    return 0.7 * tri + 0.3 * e
 
 
 def _ear_half_thickness(y):
@@ -62,7 +66,7 @@ def _ear_shape(q, inner=False):
     """Pillowy rounded-triangle slab in ear-local coords q (x across, y along, z = front)."""
     if inner:
         # recess volume: inset outline, from (front face - depth) forward
-        d2 = _ear_outline(q, inset=0.031)
+        d2 = _ear_outline(q, inset=0.036)
         d2 = np.maximum(d2, 0.03 - q[:, 1])           # recess starts a bit above the base
         h = _ear_half_thickness(q[:, 1])
         depth = 0.020 * (1 - 0.5 * np.clip(q[:, 1] / EAR_LEN, 0, 1))
@@ -83,15 +87,15 @@ def ear_local(p):
 def head_core(p):
     """Head without ears."""
     q = S.mirror_x(p)
-    skull = S.ellipsoid(p, (0, 0.0, 0.650), (0.242, 0.205, 0.205))
-    cheeks = S.ellipsoid(p, (0, -0.020, 0.560), (0.282, 0.188, 0.152))
+    skull = S.ellipsoid(p, (0, 0.0, 0.658), (0.280, 0.220, 0.220))
+    cheeks = S.ellipsoid(p, (0, -0.020, 0.562), (0.300, 0.198, 0.158))
     d = S.smin(skull, cheeks, 0.09)
     muzzle = S.ellipsoid(p, (0, -0.160, 0.547), (0.090, 0.058, 0.055))
     d = S.smin(d, muzzle, 0.06)
     neck = S.ellipsoid(p, (0, 0.0, 0.455), (0.105, 0.098, 0.075))
     d = S.smin(d, neck, 0.05)
     # cheek fluff tufts pointing outward/down
-    t1 = S.round_cone(q, (0.226, -0.030, 0.556), (0.300, -0.004, 0.516), 0.050, 0.010)
+    t1 = S.round_cone(q, (0.246, -0.030, 0.552), (0.322, -0.004, 0.512), 0.050, 0.010)
     d = S.smin(d, t1, 0.030)
     return d
 
@@ -121,12 +125,12 @@ HEAD_BBOX = ((-0.42, -0.27, 0.36), (0.42, 0.26, 1.07))
 
 
 def body_sdf(p):
-    lower = S.ellipsoid(p, (0, 0.012, 0.205), (0.190, 0.168, 0.155))
+    lower = S.ellipsoid(p, (0, 0.012, 0.205), (0.178, 0.162, 0.152))
     upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.128, 0.112, 0.128))
     d = S.smin(lower, upper, 0.12)
-    belly = S.ellipsoid(p, (0, -0.042, 0.215), (0.150, 0.128, 0.132))
+    belly = S.ellipsoid(p, (0, -0.042, 0.215), (0.140, 0.125, 0.130))
     d = S.smin(d, belly, 0.05)
-    butt = S.ellipsoid(p, (0, 0.070, 0.165), (0.158, 0.120, 0.118))
+    butt = S.ellipsoid(p, (0, 0.070, 0.165), (0.150, 0.118, 0.116))
     d = S.smin(d, butt, 0.05)
     return d
 

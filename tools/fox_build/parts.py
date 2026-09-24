@@ -24,7 +24,7 @@ def head_colors(V, N):
     ax = np.abs(x)
     front = S.smoothstep(0.02, -0.06, y)
     # white face mask: eye patches + muzzle + lower face
-    e_eye = ((ax - 0.128) / 0.108) ** 2 + ((z - 0.606) / 0.086) ** 2
+    e_eye = ((ax - 0.136) / 0.114) ** 2 + ((z - 0.600) / 0.090) ** 2
     m_eye = S.smoothstep(1.25, 0.85, e_eye)
     e_muz = (x / 0.115) ** 2 + ((z - 0.532) / 0.062) ** 2
     m_muz = S.smoothstep(1.3, 0.8, e_muz)
