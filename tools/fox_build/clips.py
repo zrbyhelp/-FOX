@@ -437,7 +437,14 @@ def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin
         for p in poses:
             sw.append(flap.swing_needed(p, sw[-1] if sw else None))
         sw = np.array(sw)
-        sw = np.stack([_smooth(sw[:, i], 2.0, loop) for i in range(3)], 1)
+        cols = []
+        for x in sw.T:   # envelope per angle: never less swing than a frame needs (like the tail lift)
+            if x.max() > 0 and x.min() < 0:     # both directions within the clip: plain smoothing
+                cols.append(_smooth(x, 2.0, loop))
+            else:
+                sgn = 1.0 if x.max() > 0 else -1.0
+                cols.append(sgn * _smooth(np.abs(x), 2.0, loop, envelope=True))
+        sw = np.stack(cols, 1)
         for p, (lat, a1, a2) in zip(poses, sw):
             flap.apply(p, *(v if abs(v) > 1e-3 else 0.0 for v in (lat, a1, a2)))
     return poses
