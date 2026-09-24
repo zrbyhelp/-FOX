@@ -21,22 +21,25 @@ const CREAM = '#fffaf4';
 const EM = 0.036; // font size: one line with its padding is ~0.11 tall
 const LINE_H = 1.4; // line height (em)
 const TRACK = 0.02; // letter spacing (em)
-const PAD_X = 1.0; // text to the silhouette (em)
+const PAD_X = 1.05; // text to the silhouette (em)
 const PAD_Y = 0.82;
 const MAX_EM = 12.5; // wrap width, as the DOM bubble (max-width: 12.5em; 11.5em on phones)
 const MAX_EM_NARROW = 11.5;
 const MAX_LINES = 2;
-const RADIUS = 0.044; // corner radius of the silhouette
-const WALL = 0.008; // straight part of the side wall
-const BEVEL_T = 0.019; // bevel depth on each face ...
-const BEVEL_S = 0.019; // ... and width in the plane: ~40% of the thickness, a round bulging rim
+const RADIUS = 0.046; // corner radius of the silhouette
+const WALL = 0.012; // straight part of the side wall
+const BEVEL_T = 0.026; // bevel depth on each face ...
+const BEVEL_S = 0.028; // ... and width in the plane (~45% of the thickness): a wide round rim
 const THICK = WALL + 2 * BEVEL_T;
 const WIDTH_STEP = 0.01; // geometry cache buckets
 // Tail: pointing down from its pivot (inside the body, PIVOT_UP above the bottom edge), its tip
-// bent a little towards the head; thinner than the body and tucked slightly behind its front.
-const TAIL = { base: 0.064, tip: 0.03, len: 0.05, up: 0.036, wall: 0.006, bevelT: 0.013, bevelS: 0.0125, sink: 0.004, bend: 0.018 };
-const PIVOT_UP = 0.02;
-const TAIL_ROOM = 0.035; // how far the tail hangs below the body (layout)
+// bent a little towards the head. As thick as the body with its front face a hair behind the
+// body's: the flat front flows on into the tail, only its sides crease into the rim.
+const TAIL = { base: 0.09, tip: 0.032, len: 0.05, up: 0.04, wall: WALL, bevelT: BEVEL_T, bevelS: 0.0145, sink: 0.0015, bend: 0.012 };
+const TAIL_INSET = RADIUS + 0.022; // tail base from the body's end: on the straight bottom edge
+const PIVOT_UP = 0.024;
+const TAIL_ROOM = 0.03; // how far the tail hangs below the body (layout)
+const YAW = 0.17; // rad: turned a little towards the fox, so its thickness shows
 // Placement / motion
 const PULL = 0.26; // in front of the head, towards the camera
 const MIN_FONT_PX = 15; // grow when the text would be smaller than this on screen (phones)
@@ -73,7 +76,11 @@ function measure(text) {
 const NO_START = /^[\s、。，．,.!！?？:：;；~～…‥)）\]】」』》〉♪♫”’'"]/u;
 const NO_END = /[(（[【「『《〈“‘]$/u;
 
+let _seg;
+/** Break units: words where the browser can segment Chinese (wraps between words), else characters. */
 function tokenize(text) {
+  _seg ??= typeof Intl !== 'undefined' && Intl.Segmenter ? new Intl.Segmenter('zh', { granularity: 'word' }) : null;
+  if (_seg) return [..._seg.segment(text)].map((x) => x.segment);
   return text.match(/[A-Za-z0-9]+(?:['’.\-][A-Za-z0-9]+)*|\s+|[\s\S]/gu) || [];
 }
 
@@ -190,7 +197,7 @@ function tailShape() {
     const c = curve.getPoint(u);
     const d = curve.getTangent(u);
     n = new THREE.Vector2(-d.y, d.x); // left of the direction of travel
-    const w = THREE.MathUtils.lerp(base, tip, Math.pow(u, 0.8)) / 2;
+    const w = THREE.MathUtils.lerp(base, tip, Math.pow(u, 0.9)) / 2;
     left.push(c.clone().addScaledVector(n, w));
     right.push(c.clone().addScaledVector(n, -w));
   }
@@ -213,8 +220,8 @@ const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
 const _up = new THREE.Vector3();
 const _q = new THREE.Quaternion();
-const _roll = new THREE.Quaternion();
-const _z = new THREE.Vector3(0, 0, 1);
+const _turn = new THREE.Quaternion();
+const _euler = new THREE.Euler();
 const _m = new THREE.Matrix4();
 const _s = new THREE.Vector3();
 
@@ -229,17 +236,20 @@ export class Bubble3D {
   constructor({ scene, camera, canvas, reducedMotion = false }) {
     Object.assign(this, { camera, canvas, reducedMotion });
     // Bubble.place() tuning: beside the head at ear height (out, up: head radii), above it (top)
-    this.layout = { out: 0.86, up: 0.62, top: 1.5, gap: 4, lean: 0.25 };
+    this.layout = { out: 1.08, up: 0.6, top: 1.5, gap: 4, lean: 0.25 };
 
     this.bodyMat = new THREE.MeshPhysicalMaterial({
       name: 'SpeechBubble',
       color: CREAM,
-      roughness: 0.9,
+      roughness: 0.86,
       metalness: 0,
-      sheen: 1, // velvet, like the fox (no fur grain)
-      sheenRoughness: 0.5,
-      sheenColor: new THREE.Color('#ffe4cf'), // a whisper of warm orange on the rim
-      specularIntensity: 0.12,
+      sheen: 0.85, // velvet, like the fox (no fur grain)
+      sheenRoughness: 0.45,
+      sheenColor: new THREE.Color('#ffdcc2'), // a whisper of warm orange on the rim
+      specularIntensity: 0.2,
+      envMapIntensity: 0.72, // less flat ambient: the lights model the rim light / dark
+      emissive: new THREE.Color(CREAM),
+      emissiveIntensity: 0.06,
       transparent: true, // fades out
     });
     this.textMat = new THREE.MeshBasicMaterial({
@@ -255,6 +265,7 @@ export class Bubble3D {
 
     const { shape, tipCentre } = tailShape();
     this.tailTip = tipCentre;
+    this.tailBend = Math.atan2(tipCentre.x, -tipCentre.y); // direction of the tip at rest (rad)
     this.geoCache = new Map();
     this.tailGeo = puffy(shape, { wall: TAIL.wall, bevelT: TAIL.bevelT, bevelS: TAIL.bevelS, curveSegments: 1 });
 
@@ -422,7 +433,7 @@ export class Bubble3D {
   /** Pop pivot and tail placement for a side. */
   setSide(side) {
     const { W, H } = this.dims;
-    const inset = RADIUS + 0.006;
+    const inset = Math.min(TAIL_INSET, W / 2);
     this.side = side;
     const x = side === 'left' ? W / 2 - inset : side === 'right' ? -W / 2 + inset : THREE.MathUtils.clamp(this.headLocalX(), -W / 2 + inset, W / 2 - inset);
     this.pivot.set(x, -H / 2 + PIVOT_UP);
@@ -464,7 +475,7 @@ export class Bubble3D {
       if (!this.reducedMotion && this.state === 'in') this.pop.s = Math.min(this.pop.s, 0.6);
     }
     if (box.side === 'top') {
-      const inset = RADIUS + 0.006;
+      const inset = Math.min(TAIL_INSET, this.dims.W / 2);
       this.tailXGoal = THREE.MathUtils.clamp(this.headLocalX(), -this.dims.W / 2 + inset, this.dims.W / 2 - inset);
     }
   }
@@ -524,7 +535,9 @@ export class Bubble3D {
       bob = BOB * Math.sin((this.t * 2 * Math.PI) / 2.6);
     }
     const k = this.boost;
-    _q.copy(this.camera.quaternion).multiply(_roll.setFromAxisAngle(_z, roll));
+    // turned a little towards the fox (beside it: yaw; above it: pitch), then the roll
+    const pitch = this.side === 'top' ? YAW * 0.6 : 0;
+    _q.copy(this.camera.quaternion).multiply(_turn.setFromEuler(_euler.set(pitch, -YAW * sideSign, roll, 'YXZ')));
     _right.set(1, 0, 0).applyQuaternion(this.camera.quaternion);
     _up.set(0, 1, 0).applyQuaternion(this.camera.quaternion);
     this.centre.copy(this.pos).addScaledVector(_up, (bob + rise) * k);
@@ -537,8 +550,9 @@ export class Bubble3D {
     const px = r.left + ((_c.x + 1) / 2) * r.width;
     const py = r.top + ((1 - _c.y) / 2) * r.height;
     const flip = this.side === 'left' ? -1 : this.side === 'right' ? 1 : this.mouth.x < px ? 1 : -1;
-    const range = this.side === 'right' ? [-1.2, -0.25] : this.side === 'left' ? [0.25, 1.2] : [-0.7, 0.7];
-    this.aimGoal = THREE.MathUtils.clamp(Math.atan2(this.mouth.x - px, this.mouth.y - py), range[0], range[1]);
+    const range = this.side === 'right' ? [-0.9, -0.2] : this.side === 'left' ? [0.2, 0.9] : [-0.6, 0.6];
+    const want = THREE.MathUtils.clamp(Math.atan2(this.mouth.x - px, this.mouth.y - py), range[0], range[1]);
+    this.aimGoal = want - flip * this.tailBend; // the tip leans by tailBend already
     this.aim += (this.aimGoal - this.aim) * (1 - Math.exp(-dt * 12));
     this.tailFlip = flip;
 
