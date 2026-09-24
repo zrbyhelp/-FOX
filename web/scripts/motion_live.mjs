@@ -242,7 +242,7 @@ const seg = (name) => page.evaluate((s) => { window.__motion.seg = s; }, name);
 // ---- scenario ---------------------------------------------------------------------------------
 const plan = [];
 const add = (name, fn) => { if (!only?.length || only.includes(name)) plan.push([name, fn]); };
-for (const c of ['Wave', 'Happy', 'Heart', 'Shrug', 'Present', 'Reach', 'Jump', 'LookBack', 'Idle_LookAround']) {
+for (const c of ['Wave', 'Happy', 'Heart', 'Shrug', 'Present', 'Reach', 'Jump', 'Dance', 'LookBack', 'Idle_LookAround']) {
   add(c, async () => { await trigger(c); await sleep(400); await waitIdle(); });
 }
 add('Sit_Think', async () => {

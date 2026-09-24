@@ -42,6 +42,9 @@ const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle tra
 const ARM_LIFT = { upperArm: -16 * DEG, inward: 0, forearm: -34 * DEG, paw: 14 * DEG }; // until solved
 const TAP = { forearm: 22 * DEG, paw: -12 * DEG };
 const TAP_HOVER = 0.008; // paw tip rest height above the keycaps
+// the shoulders sit at the body's sides: reaching the keys in front of the chest they roll
+// forward about the shoulder bone's pivot (like the build's arm solver)
+const PROTRACT = 45 * DEG;
 
 // Expressions (spec.expressions: hidden = uniform scale 0.001, visible = 1). However a clip
 // switches a feature (a step, a short crossfade), it eases in / out over ~0.35 s: a critically
@@ -173,9 +176,13 @@ class Kinematics {
  * with the paw tip level with it sideways, then the paw aims its tip TAP_HOVER above the target.
  * `side` = +1 left, -1 right.
  */
-function solveArm({ S, E, W, F }, target, side) {
+function solveArm(rest, target, side) {
   const X = new THREE.Vector3(1, 0, 0);
+  const Y = new THREE.Vector3(0, 1, 0);
   const Z = new THREE.Vector3(0, 0, 1);
+  // protracted rest chain (rotated forward about the vertical axis through the shoulder pivot)
+  const pro = (v) => (rest.P ? v.clone().sub(rest.P).applyAxisAngle(Y, -side * PROTRACT).add(rest.P) : v.clone());
+  const [S, E, W, F] = [rest.S, rest.E, rest.W, rest.F].map(pro);
   const pawLen = F.distanceTo(W);
   const tip = target.clone().add(new THREE.Vector3(0, TAP_HOVER, 0));
   const wrist = tip.clone().add(new THREE.Vector3(0, pawLen * 0.7, -pawLen * 0.7));
@@ -231,7 +238,7 @@ export class Procedural {
     // Everything we touch, with its rest transform (captured before any animation ran).
     const names = [
       'neck', 'head', 'ear_L', 'ear_R', ...EXPRESSIONS, 'scarfFlap_1', 'scarfFlap_2',
-      'upperArm_L', 'upperArm_R', 'forearm_L', 'forearm_R', 'paw_L', 'paw_R', ...TAIL,
+      'shoulder_L', 'shoulder_R', 'upperArm_L', 'upperArm_R', 'forearm_L', 'forearm_R', 'paw_L', 'paw_R', ...TAIL,
     ];
     this.rest = names.filter((n) => this.b[n]).map((n) => ({
       bone: this.b[n], q: this.b[n].quaternion.clone(), s: this.b[n].scale.clone(), p: this.b[n].position.clone(),
@@ -258,7 +265,8 @@ export class Procedural {
       const [S, E, W] = [at(up), at(fore), at(paw)];
       const child = paw.children.find((c) => c.isBone && /finger/i.test(c.name));
       const F = child ? at(child) : W.clone().sub(E).setLength(0.05).add(W); // no finger bone: extend the forearm
-      this.armRest[side] = { S, E, W, F };
+      const sh = this.b[`shoulder_${side}`];
+      this.armRest[side] = { S, E, W, F, P: sh ? at(sh) : null };
     }
     this.armLift = { L: ARM_LIFT, R: ARM_LIFT };
     this.armReach = null; // solved paw tip distance from its target (m), per side
@@ -567,6 +575,8 @@ export class Procedural {
       const tap = THREE.MathUtils.clamp(T[side].x, -0.3, 1.2);
       const lift = this.armLift[side];
       const inward = (side === 'L' ? -1 : 1) * lift.inward; // towards the body's midline
+      const sh = this.b[`shoulder_${side}`];
+      if (sh && this.armRest[side]?.P) rotateWorld(sh, _q.setFromAxisAngle(_up, -(side === 'L' ? 1 : -1) * w * PROTRACT));
       const up = this.b[`upperArm_${side}`];
       if (up) rotateWorld(up, _q.setFromAxisAngle(fwd, w * inward).multiply(_q2.setFromAxisAngle(right, w * lift.upperArm)));
       for (const [part, angle, tapAmt] of [['forearm', lift.forearm, TAP.forearm], ['paw', lift.paw, TAP.paw]]) {
