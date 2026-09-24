@@ -303,7 +303,7 @@ class FlapGuard:
     HIDDEN = 0.25      # flap length fraction covered by the ring (tube half-height / flap length)
     # (armature-Y swing: negative = outward, scarfFlap_1 pitch: + = back toward the chest,
     #  scarfFlap_2 pitch relative to scarfFlap_1)
-    LATS = (0.0, -12.0, -24.0)
+    LATS = (0.0,)
     PITCH1 = tuple(float(a) for a in range(-40, 31, 5))
     PITCH2 = (-1.0, -0.5, 0.0)          # x PITCH1: -1 = the lower half hangs straight down again
     STICKY = 12.0                       # cost bonus for keeping the previous frame's answer
