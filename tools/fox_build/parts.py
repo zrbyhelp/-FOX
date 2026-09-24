@@ -91,11 +91,11 @@ def body_weights(V):
     W["neck"] *= S.smoothstep(0.40, 0.45, z)
     breath = 0.8 * np.exp(-((z - 0.235) / 0.085) ** 2) * S.smoothstep(0.02, -0.08, V[:, 1])
     W["breath"] = breath
-    # the leg columns follow the thigh / shin bones (knee ~0.105). The web of the crotch between
+    # the leg columns follow the thigh / shin bones (knee ~0.105); the web of the crotch between
     # them follows both legs half and half (when the fox sits and both legs swing forward it moves
-    # with them instead of folding between the columns)
+    # with them instead of sagging / folding between the columns)
     legz = S.smoothstep(0.188, 0.100, z)
-    leg = legz * (0.55 + 0.45 * S.smoothstep(0.0, 0.05, np.abs(x)))
+    leg = legz
     s = W["hips"] + W["spine"] + W["chest"] + W["neck"] + 1e-9
     for k in ("hips", "spine", "chest", "neck"):
         W[k] = W[k] / s * (1 - leg)

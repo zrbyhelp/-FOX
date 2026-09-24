@@ -642,8 +642,8 @@ def make_clips(rig: Rig):
     clips.append(Clip("Sit_Think", 4.0, [(0, think)], think_ov, loop=True,
                       meta=dict(priority=1, lookAt=0.5, refTime=1.0)))
 
-    doze = L.sit(lean=4)
-    doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5)
+    doze = L.sit(lean=2)
+    doze.add("neck", x=7, y=-4).add("head", x=12, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
     L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016)  # room to nod
     doze.expression(eyes="sleep")
