@@ -58,7 +58,10 @@ npm run build        # 生成静态站点到 web/dist(index.html + live2d.html),
 | 拖动空白处 / 滚轮(3D) | 旋转、缩放视角(可以绕到侧面和背面看尾巴) |
 
 - **对话气泡**:每个动作都有一句台词,例如打招呼时说「嗨~」,开心时说「嘿嘿,好开心!」,比心时说「送你一颗小心心~」,打盹时是「Zzz…」。
-  - 气泡带回弹效果地弹出,并跟着头部移动,不会挡住 Logo 和工具栏。
+  - 3D 版的气泡是场景里一个鼓鼓的奶白色「软糖」:圆角、有厚度,绒面材质受场景灯光照射、有浅浅的投影,尾巴指向小狐狸。
+  - 文字印在正面,气泡始终面向镜头;转动视角或在手机竖屏上也会保持在画面内,不会被狐狸或 Logo 挡住。
+  - 弹出时 Q 弹,消失时缩小淡出,显示期间轻轻浮动,并跟着头部移动,避开 Logo 和工具栏。台词同时写进一个屏幕阅读器可读的隐藏区域。
+  - 2D 版仍使用原来的扁平气泡。
   - 说话时小狐狸会动嘴。
 - **出场和离场**:
   - 打开页面时,小狐狸和 Logo 一起凭空弹出(缩放回弹),然后挥手。
@@ -93,13 +96,13 @@ tools/                  建模 / 绑定 / 动画 / 导出流水线(Python + Blen
   validate_glb.py       模型校验(46 项,包括压缩后的发布文件)
   deform_qa.py          蒙皮形变检查(三角形拉伸 / 塌陷、穿地)
   motion_qa.py          动作平滑度检查(逐骨骼角加速度,找抽搐)
-  clip_qa.py            穿模检查(手臂 / 头 / 围巾 / 尾巴 / 腿之间的穿插深度)
+  clip_qa.py            穿模检查(手臂 / 头 / 围巾 / 尾巴 / 腿 / 脚与肚子之间的穿插深度)
   export_psd.py         把 2D 分层导出为 PSD(models/fox_live2d_layers.psd)
 models/fox.blend        Blender 工程(模型、骨架、权重、全部动作),可直接打开编辑
 models/fox_live2d_layers.psd   2D 分层 PSD,可导入 Live2D Cubism Editor 做正式的 .moc3 绑定
 web/                    Vite + Three.js 网页
   src/                  scene、fox、materials、animator(状态机)、procedural(视线 / 眨眼 / 尾巴弹簧链)、
-                        interaction、logo、bubble(对话气泡)、keyboard(魔法键盘 + 打字)、heartfx(比心爱心)、ui、debug
+                        interaction、logo、bubble(对话气泡逻辑)、bubble3d(3D 软糖气泡)、keyboard(魔法键盘 + 打字)、heartfx(比心爱心)、ui、debug
   src/live2d/           2D 版:app(对外接口)、puppet(分层网格渲染)、rig(参数与变形器)、physics(钟摆物理)、
                         motions(关键帧动作)、controller(状态机)、props(Logo / 键盘 / 爱心 / Z 字)、render_layers(离线分层渲染)
   public/models/        fox.glb、logo.glb、clips.json
@@ -111,8 +114,11 @@ web/                    Vite + Three.js 网页
 ## 3D 模型与绑定
 
 - **建模方式**:用 numpy 写有符号距离场(SDF)描述各部件,平滑并集得到毛绒玩具般的圆润形体。然后经过 marching cubes、pymeshlab 各向同性重网格,再把顶点投影回 SDF 表面,并用 SDF 梯度计算法线。
-  - 尾巴(扫掠管,尾尖圆润收口)、围巾、五官用参数化网格生成。五官沿 SDF 光线投射贴合到脸上。
-  - 耳朵是向前的杯状耳廓:叶形外壳,前沿在下 1/3 处合拢盖住耳根,上 2/3 敞开露出橙色耳窝。
+  - 尾巴(扫掠管,末端平滑收成圆润的尖)、围巾、五官用参数化网格生成。五官沿 SDF 光线投射贴合到脸上。
+  - 耳朵像缩小、变圆的耳廓狐耳朵:一张片卷成的漏斗,向外倾斜约 38°。
+    - 内侧(靠头顶中间)的边向前卷成一道圆润的卷棱,越往耳根越宽,把耳根内侧包住;外侧只是一圈薄边,不卷。
+    - 正面大部分是敞开的深耳窝(橙色),背面鼓起。
+    - 做法:C 形截面(厚度可变的圆弧片,两端圆润收边)沿耳轴扫掠,见 `shapes.ear_section`。
   - 手臂从身体两侧、围巾下方长出,扁而逐渐加宽,末端是圆润的连指手套式爪子(没有手指);脚底是亮橙色,带肉垫。
 - **颜色**:
   - 奶油白、白色面罩、腮红,以及爪、脚、内耳、尾尖的橙色渐变,都烘焙在顶点色里。
@@ -142,7 +148,7 @@ web/                    Vite + Three.js 网页
   | `Present` | 手心朝上指向 Logo | 图 3 |
   | `Reach` | 踮脚够 Logo | 图 5 |
   | `Shrug` | 摊手 | 图 6 |
-  | `SitDown` | 坐下 | — |
+  | `SitDown` | 坐下(两腿向前张成小 V 字,脚落在肚子两侧前方) | — |
   | `Sit_Think` | 托腮思考 | 图 4 |
   | `Sit_Doze` | 打盹 | 图 8 |
   | `StandUp` | 起身 | — |
