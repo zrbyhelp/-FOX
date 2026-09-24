@@ -80,7 +80,7 @@ export function clampParams(p) {
 
 const HEAD_TURN = 0.05; // model units the face centre shifts at |AngleX| = 30
 const HEAD_NOD = 0.036; // ... at |AngleY| = 30
-const ARM_SPLIT = 0.93; // front part of an arm = within this x upper-arm length of the elbow, or beyond it
+const ARM_SPLIT = 0.82; // front part of an arm = within this x upper-arm length of the elbow, or beyond it
 const HEAD_GLOBAL = 0.16; // share of the shift that moves the whole head (silhouette included)
 const FACE_DEPTH = {
   Nose: 1.4, MouthSmile: 1.22, MouthOpen: 1.22,

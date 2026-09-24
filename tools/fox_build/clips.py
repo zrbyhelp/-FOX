@@ -195,8 +195,8 @@ class Lib:
 
     def wave_up(self, p, side="L", swing=0.0):
         sx = 1 if side == "L" else -1
-        self.arm(p, side, (sx * 0.300, -0.118, 0.462), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
-        return fingers(p, side, 4, 5)
+        self.arm(p, side, (sx * 0.312, -0.118, 0.462), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
+        return fingers(p, side, 4, 30)       # thumb tucked forward, clear of the cheek
 
     def present(self, p, side="R"):
         sx = 1 if side == "L" else -1
@@ -225,8 +225,8 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=18, z=-4)                        # straight out of the butt first...
-        tail_curve(p, x=-5, z=-24, start=2, falloff=0.95)  # ...then curl round to the side
+        p.set("tail_1", x=14, z=0)                         # straight out of the butt first...
+        tail_curve(p, x=-14, z=-24, start=2, falloff=0.95) # ...then curl down and round to the side
         return p
 
     def stand_legs(self, p):
@@ -583,7 +583,7 @@ def make_clips(rig: Rig):
             sq = 0.6 * (1 - smoother((t - T_SQ) / (T_TAKE + 0.08 - T_SQ)))
         p.scale["root"] = (1 + 0.06 * sq, 1 - 0.07 * sq, 1 + 0.06 * sq)   # root local Y = up
         tail_wag(t, p, rate=1.5, amp=10)
-    clips.append(Clip("Jump", 1.7, [(0, stand), (T_SQ, j_sq), (0.70, j_up), (T_LAND + 0.04, j_land), (1.7, stand)],
+    clips.append(Clip("Jump", 1.7, [(0, stand), (T_SQ, j_sq), (0.70, j_up), (T_LAND + 0.12, j_land), (1.7, stand)],
                       jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
 
     # Pet (loop): leaning into the hand, eyes ^^, ears back, tail wagging

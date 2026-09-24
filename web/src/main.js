@@ -213,7 +213,7 @@ async function main() {
 
   const app = {
     stage, fox, logo, animator, procedural, interaction, rng, dozeFx, updateShadows, materials, step,
-    bubble, keyboard, typing, heartFx, hooks,
+    bubble, keyboard, typing, heartFx, hooks, foxShadow,
     startLoop() {
       if (running) return;
       running = true;

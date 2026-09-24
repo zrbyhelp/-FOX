@@ -642,7 +642,7 @@ export class Procedural {
     this.tailFlicks++;
   }
 
-  /** Largest angle (deg) between a tail bone's final and animated direction (debug / tests). */
+  /** Largest angle (deg) between a tail link's final and animated direction (debug / tests). */
   get tailBend() {
     return this._tailBend || 0;
   }
@@ -743,6 +743,7 @@ export class Procedural {
       // deviation actually shown: drag/sway fully, the dynamic part scaled by the layer weight
       const phi = _v.copy(T.phi[i]).sub(T.psi[i]).multiplyScalar(weight).add(T.psi[i]);
       const ang = phi.length();
+      maxBend = Math.max(maxBend, ang);
       const want = _v2.copy(T.dirs[i]);
       if (ang > 1e-6) want.applyAxisAngle(phi.divideScalar(ang), ang);
       want.transformDirection(F.matrixWorld); // frame -> world (normalised)
@@ -750,9 +751,7 @@ export class Procedural {
       const cur = i < n - 1 ? bones[i + 1].getWorldPosition(_v).sub(headW) : _v.copy(Y).applyQuaternion(bone.getWorldQuaternion(_q2));
       if (cur.lengthSq() < 1e-12) continue;
       cur.normalize();
-      const a = cur.angleTo(want);
-      if (a < 1e-5) continue;
-      maxBend = Math.max(maxBend, a);
+      if (cur.angleTo(want) < 1e-5) continue;
       rotateWorld(bone, _q.setFromUnitVectors(cur, want));
     }
     this._tailBend = maxBend / DEG;
