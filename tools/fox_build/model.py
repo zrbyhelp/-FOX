@@ -11,7 +11,7 @@ from pathlib import Path
 import numpy as np
 
 from . import config as C
-from . import face, mesher, parametric as PM, parts as PT, shapes as SH
+from . import ao, face, mesher, parametric as PM, parts as PT, shapes as SH
 from .assemble import Part
 
 HERE = Path(__file__).resolve().parent
@@ -104,6 +104,9 @@ def build_parts():
     V, F, N, ids = face.mouth_open()
     parts.append(Part("MouthOpen", V, F, materials=["MouthInside", "Tongue", "Line"], material_ids=ids,
                       normals=N, weights={"mouthOpen": np.ones(len(V))}))
+    for p in parts:
+        if p.name in ao.CONTEXT:
+            p.ao = ao.bake(p.name, np.asarray(p.verts), np.asarray(p.normals))
     return parts
 
 

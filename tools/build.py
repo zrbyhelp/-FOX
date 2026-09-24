@@ -1,6 +1,6 @@
 """Single build entry point.
 
-    .venv/bin/python tools/build.py              # full model (falls back to blockout if absent)
+    .venv/bin/python tools/build.py              # full model (Windows: .venv\\Scripts\\python)
     .venv/bin/python tools/build.py --blockout   # capsule stand-ins on the real skeleton
     .venv/bin/python tools/build.py --no-logo --no-blend
 
@@ -10,7 +10,7 @@ Holds an exclusive lock (.build.lock) so concurrent builds cannot clobber each o
 from __future__ import annotations
 
 import argparse
-import fcntl
+import contextlib
 import sys
 import time
 from pathlib import Path
@@ -78,6 +78,29 @@ def build_logo(bpy):
     print(f"[build] wrote {C.OUT_LOGO_GLB}")
 
 
+@contextlib.contextmanager
+def build_lock(path):
+    """Exclusive inter-process lock (fcntl on Unix, msvcrt on Windows)."""
+    with open(path, "a+") as lf:
+        try:
+            import fcntl
+            try:
+                fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            except BlockingIOError:
+                print("[build] another build is running; waiting for the lock...")
+                fcntl.flock(lf, fcntl.LOCK_EX)
+        except ImportError:
+            import msvcrt
+            lf.seek(0)
+            while True:
+                try:
+                    msvcrt.locking(lf.fileno(), msvcrt.LK_NBLCK, 1)
+                    break
+                except OSError:
+                    time.sleep(0.5)
+        yield
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--blockout", action="store_true")
@@ -89,13 +112,7 @@ def main():
                          "web/public/models/dev/<name>.glb (scratch output, no .blend)")
     a = ap.parse_args()
 
-    lock_path = C.ROOT / ".build.lock"
-    with open(lock_path, "w") as lf:
-        try:
-            fcntl.flock(lf, fcntl.LOCK_EX | fcntl.LOCK_NB)
-        except BlockingIOError:
-            print("[build] another build is running; waiting for the lock...")
-            fcntl.flock(lf, fcntl.LOCK_EX)
+    with build_lock(C.ROOT / ".build.lock"):
         import bpy
         if not a.no_fox:
             build_fox(bpy, a.blockout, not a.no_blend, a.out_name)
