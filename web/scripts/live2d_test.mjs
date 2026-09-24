@@ -238,13 +238,22 @@ try {
       await page.mouse.move(tail.x, tail.y);
       await page.mouse.down();
       for (let i = 1; i <= 10; i++) await page.mouse.move(tail.x + i * 12, tail.y + i * 6);
-      await page.waitForTimeout(800);
+      // simulated time (software GL renders a few fps, so wall-clock waits barely advance it)
+      await page.evaluate(() => window.__live2d.debug.advance(0.8));
       const held = await page.evaluate(() => window.__live2d.debug.params.PhysTail4);
       await shot('interact_tail_drag');
       await page.mouse.up();
-      await page.waitForTimeout(1500);
-      const after = await page.evaluate(() => window.__live2d.debug.params.PhysTail4);
-      check('drag tail bends it towards the pointer, then springs back', held < before - 8 && Math.abs(after - before) < Math.abs(held - before), { before, held, after });
+      // springs back with overshoot (and the release plays LookBack's tail whip): sample for a
+      // while and require it to come back closer to the rest angle than it was while held
+      let after = held;
+      for (let i = 0; i < 15; i++) {
+        const v = await page.evaluate(() => {
+          window.__live2d.debug.advance(0.2);
+          return window.__live2d.debug.params.PhysTail4;
+        });
+        if (Math.abs(v - before) < Math.abs(after - before)) after = v;
+      }
+      check('drag tail bends it towards the pointer, then springs back', held < before - 8 && Math.abs(after - before) < Math.abs(held - before), { before, held, closestAfter: after });
     }
   }
   // click ear -> flick

@@ -733,7 +733,9 @@ def make_clips(rig: Rig):
             u = (t - t0) / (t1 - t0)
             k = (u * HOPS) % 1.0
             ramp = min(1.0, u / 0.12, (1 - u) / 0.12)
-            air = 4 * k * (1 - k) * (0.35 + 0.65 * ramp)
+            # parabola ^1.35: same arc, but take-off / landing velocity eases over a few frames
+            # (a bare parabola's cusp jolts the legs and the web's tail chain)
+            air = (4 * k * (1 - k)) ** 1.35 * (0.35 + 0.65 * ramp)
             e = 1 - (1 - u) ** 2 if ease == "out" else u * u
             x = x_from + (x_to - x_from) * e
             p.loc["root"] = np.array([x, 0.0, 0.0])
