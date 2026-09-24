@@ -139,7 +139,7 @@ def arm_weights(V, side="L"):
     s = _chain_param(V, [sh, el, wr, tip])
     L1 = np.linalg.norm(el - sh); L2 = L1 + np.linalg.norm(wr - el)
     e = S.smoothstep(L1 - 0.036, L1 + 0.036, s)
-    w = S.smoothstep(L2 - 0.024, L2 + 0.024, s)
+    w = S.smoothstep(L2 - 0.030, L2 + 0.030, s)
     return {f"upperArm_{side}": 1 - e, f"forearm_{side}": e - w, f"paw_{side}": w}
 
 

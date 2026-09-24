@@ -388,6 +388,9 @@ class ArmSolver:
             twist = x[3:6] @ fa_axis
             bend = math.degrees(np.linalg.norm(x[3:6]))
             e += 30.0 * twist ** 2 + 0.02 * max(bend - bend_max, 0.0) ** 2
+            # the wrist does not twist either (linear-blend skinning pinches the forearm): turning
+            # the palm comes from rolling the whole arm at the shoulder, which is rigid
+            e += 30.0 * (x[6:9] @ paw_dir) ** 2
             e += 0.3 * np.sum(x[6:9] ** 2) + 0.05 * np.sum(x[0:3] ** 2)
             return e
 
