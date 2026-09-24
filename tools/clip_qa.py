@@ -55,8 +55,12 @@ def main():
     rows = []; fail = False
     for clip in CL.make_clips(rig):
         n = int(round(clip.duration * CL.FPS))
-        fs = list(range(0, n + 1, every))
-        poses = CL.finalize_series(clip, [clip.pose_at(f / CL.FPS) for f in fs], ground_skin, tail_skin, flap)
+        # finalize every frame, exactly like the build (series smoothing depends on the frame
+        # spacing), then test every `every`-th
+        allf = list(range(0, n + 1))
+        full = CL.finalize_series(clip, [clip.pose_at(f / CL.FPS) for f in allf], ground_skin, tail_skin, flap)
+        fs = allf[::every]
+        poses = full[::every]
         worst = {}
         for f, pose in zip(fs, poses):
             Qw, Hw = rig.fk(pose)

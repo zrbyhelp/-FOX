@@ -362,14 +362,18 @@ class FlapGuard:
             inside.append((self.body_sdf(r) < -0.004).sum()); n += len(pts)
         return float(sum(inside)) / max(n, 1)
 
-    def swing_needed(self, pose, prev=None):
+    def swing_needed(self, pose, prev=None, family=None):
         """(lateral, pitch_1, pitch_2) in degrees; (0, 0, 0) when the arms are clear.
         Coarse grid (10 deg pitch steps), then the 5 deg neighbours of the best candidate;
         `prev` (the previous frame's answer) is kept while it still clears and costs about the
-        same, so the flap does not flip between equally good solutions."""
+        same, so the flap does not flip between equally good solutions. family: 'tuck' (pitch_1
+        >= 0) or 'drape' (<= 0) keeps a whole clip on one side of the arm. Sets self.excess
+        (penetration left beyond TOL)."""
         P = self._arm_points(pose)                 # the arms do not move with the flap
+        self.excess = 0.0
         if self.depth(pose, P) <= self.TOL:
             return (0.0, 0.0, 0.0)
+        pitches = [a for a in self.PITCH1 if family is None or (a >= 0 if family == "tuck" else a <= 0)]
         seen = {}
 
         def score(lat, a1, k):
@@ -381,7 +385,7 @@ class FlapGuard:
                 seen[key] = (d, c)
             return seen[key]
 
-        coarse = [a for a in self.PITCH1 if a % 10 == 0]
+        coarse = [a for a in pitches if a % 10 == 0]
         for lat in self.LATS:
             for a1 in coarse:
                 for k in self.PITCH2:
@@ -390,7 +394,7 @@ class FlapGuard:
         if ok:
             lat, a1, k = min(ok)[1]
             for d1 in (-5.0, 5.0):
-                if a1 + d1 in self.PITCH1:
+                if a1 + d1 in pitches:
                     for kk in self.PITCH2:
                         score(lat, a1 + d1, kk)
             ok = [(v[1], key) for key, v in seen.items() if v[1] is not None]
@@ -402,6 +406,7 @@ class FlapGuard:
             lat, a1, k = min(ok)[1]
         else:
             lat, a1, k = min((v[0], key) for key, v in seen.items())[1]
+        self.excess = max(0.0, seen[(lat, a1, k)][0] - self.TOL)
         return (lat, a1, k * a1)
 
 
@@ -433,10 +438,19 @@ def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin
             if a > 1e-3:
                 p.add("tail_1", x=float(a))
     if flap is not None:   # the flap tucks / drapes / swings aside instead of being cut
-        sw = []
-        for p in poses:
-            sw.append(flap.swing_needed(p, sw[-1] if sw else None))
-        sw = np.array(sw)
+        best = None
+        for fam in ("tuck", "drape"):   # one side of the arm for the whole clip (no flip-flop)
+            sw = []; left = 0.0; cost = 0.0
+            for p in poses:
+                sw.append(flap.swing_needed(p, sw[-1] if sw else None, family=fam))
+                left += flap.excess
+                cost += abs(sw[-1][0]) * 0.7 + abs(sw[-1][1]) + abs(sw[-1][2]) * 0.5
+            if not any(any(x) for x in sw):
+                break                    # nothing touches the flap in this clip
+            key = (round(left, 3), cost)
+            if best is None or key < best[0]:
+                best = (key, sw)
+        sw = np.array(best[1] if best else sw)
         cols = []
         for x in sw.T:   # envelope per angle: never less swing than a frame needs (like the tail lift)
             if x.max() > 0 and x.min() < 0:     # both directions within the clip: plain smoothing
