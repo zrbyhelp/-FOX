@@ -144,24 +144,6 @@
     "blink": 1.0,
     "springs": 1.0
   },
-  "Enter": {
-    "loop": false,
-    "duration": 3.0,
-    "priority": 4,
-    "interruptible": false,
-    "lookAt": 0.3,
-    "blink": 1.0,
-    "springs": 1.0
-  },
-  "Exit": {
-    "loop": false,
-    "duration": 2.9,
-    "priority": 4,
-    "interruptible": false,
-    "lookAt": 0.0,
-    "blink": 1.0,
-    "springs": 1.0
-  },
   "Type": {
     "loop": true,
     "duration": 1.2,
