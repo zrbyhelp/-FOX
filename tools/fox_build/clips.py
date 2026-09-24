@@ -419,9 +419,14 @@ def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin
         dz = _smooth(dz, 1.5, loop)
         for p, d in zip(poses, dz):
             loc = p.loc.get("root", np.zeros(3)).copy(); loc[2] += d; p.loc["root"] = loc
-    for p in poses:   # hops / bounces ride on top of the grounded pose
-        if getattr(p, "hop", 0.0):
-            loc = p.loc.get("root", np.zeros(3)).copy(); loc[2] += p.hop; p.loc["root"] = loc
+    # hops / bounces ride on top of the grounded pose; smoothing spreads each landing's velocity
+    # change over ~4 frames (a parabola's cusp jolts the web's tail chain)
+    hops = np.array([getattr(p, "hop", 0.0) for p in poses])
+    if hops.any():
+        hops = np.maximum(_smooth(hops, 1.3, loop), 0.0)
+        for p, h in zip(poses, hops):
+            if h > 1e-6:
+                loc = p.loc.get("root", np.zeros(3)).copy(); loc[2] += h; p.loc["root"] = loc
     if tail_skin is not None:
         lift = _smooth([tail_lift_needed(tail_skin, p) for p in poses], 2.0, loop, envelope=True)
         for p, a in zip(poses, lift):
@@ -668,7 +673,7 @@ def make_clips(rig: Rig):
         ph = 2 * math.pi * t / 1.6
         p.add("neck", y=3 * math.sin(ph)); p.add("head", y=6 * math.sin(ph), x=2 + 1.5 * math.sin(2 * ph), z=3 * math.sin(ph))
         p.add("chest", y=2 * math.sin(ph))
-        tail_wag(t, p, rate=2.5, amp=28)
+        tail_wag(t, p, rate=2.5, amp=23)
         breathe(t, p, rate=1.25, amt=0.6)
     clips.append(Clip("Pet", 1.6, [(0, pet)], pet_ov, loop=True, meta=dict(priority=2, lookAt=0.0)))
 
