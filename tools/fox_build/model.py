@@ -24,8 +24,11 @@ VOXEL = {"Head": 0.003, "Body": 0.004, "Arm": 0.0022, "Leg": 0.0022}
 
 def _src_hash(*extra):
     h = hashlib.sha1()
-    for f in ("shapes.py", "sdf.py", "mesher.py", "config.py"):
+    for f in ("shapes.py", "sdf.py", "mesher.py"):
         h.update((HERE / f).read_bytes())
+    # from config only what shapes meshes: proportions and the skeleton (limb placement)
+    h.update(repr(sorted(C.P.items())).encode())
+    h.update(repr(list(C.bone_table().items())).encode())
     for e in extra:
         h.update(repr(e).encode())
     return h.hexdigest()[:16]

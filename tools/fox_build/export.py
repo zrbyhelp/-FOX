@@ -83,7 +83,7 @@ def compress_glb(src: Path, dst: Path) -> bool:
     if cli.exists():
         cmd = [str(cli), "meshopt", str(src), str(dst), "--level", "medium",
                "--quantization-volume", "scene", "--quantize-color", "12"]
-        r = subprocess.run(cmd, cwd=web, capture_output=True, text=True)
+        r = subprocess.run(cmd, cwd=web, capture_output=True, text=True, encoding="utf-8", errors="replace")
         if r.returncode == 0 and dst.exists():
             return True
         print("[build] meshopt compression failed, copying raw glb:\n" + r.stdout + r.stderr)

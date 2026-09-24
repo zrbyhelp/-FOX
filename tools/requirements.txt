@@ -7,3 +7,6 @@ scikit-image>=0.24
 pymeshlab>=2023.12
 pillow>=10
 pygltflib>=1.16
+# optional: layered PSD export of the Live2D-style art (tools/export_psd.py)
+pytoshop>=1.2
+six

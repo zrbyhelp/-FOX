@@ -21,6 +21,17 @@ const META_DEFAULTS = {
   Jump: { priority: 3, interruptible: false },
   Pet: { priority: 3 },
   LookBack: { priority: 2, lookAt: 0 },
+  Enter: { priority: 5, interruptible: false, lookAt: 0.3 },
+  Exit: { priority: 5, interruptible: false, lookAt: 0 },
+  Type: { priority: 1, lookAt: 0.45 },
+};
+
+// Behaviour the web app relies on, whatever clips.json says (Enter / Exit / Jump carry root
+// motion and must play to the end; typing and clicks never cut them off).
+const META_FORCED = {
+  Enter: { interruptible: false },
+  Exit: { interruptible: false },
+  Jump: { interruptible: false },
 };
 
 export function makeLoader() {
@@ -115,6 +126,7 @@ export async function loadFox({ url, clipsUrl, spec, materials }) {
       lookAtLogo: false,
       ...META_DEFAULTS[clip.name],
       ...clipsJson[clip.name],
+      ...META_FORCED[clip.name],
       duration: clip.duration,
     };
   }

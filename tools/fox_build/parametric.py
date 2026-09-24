@@ -94,32 +94,41 @@ def _profile(t):
     k = 5
     rp = np.pad(r, (k, k), mode="edge")
     r = np.convolve(rp, np.ones(2 * k + 1) / (2 * k + 1), mode="same")[k:-k]
-    # rounded tip: r ~ sqrt near t=1
-    tip = t > 0.9
-    r[tip] = np.minimum(r[tip], 0.30 * np.sqrt(np.clip(1 - t[tip], 0, 1)))
+    # pointed (not blunt) tip: only the last ~2% is rounded off
+    tip = t > 0.975
+    r[tip] = np.minimum(r[tip], 0.13 * np.sqrt(np.clip(1 - t[tip], 0, 1)))
     return r
 
 
-def tail_mesh(n_rings=64, n_seg=32):
+def tail_mesh(n_rings=72, n_seg=32, r_end=0.013, cap_rings=5):
+    """Tail tube along the spline; the pointed tip ends in a small hemispherical cap (a bare
+    pole vertex gave a degenerate normal that rendered as a white dot)."""
     sp = Spline(C.TAIL_SPLINE)
-    s = np.linspace(0, 1, n_rings)
-    t = 1 - (1 - s) ** 1.25            # denser toward the tip
-    t[-1] = 1.0
+    s = np.linspace(0, 1, 4000)
+    r_all = _profile(s)
+    t_end = s[np.nonzero((r_all < r_end) & (s > 0.8))[0][0]]
+    u = np.linspace(0, 1, n_rings)
+    t = (1 - (1 - u) ** 1.25) * t_end            # denser toward the tip
     C_ = sp.point_at_arclength(t)
     T = sp.tangent_at_arclength(t)
     N, B = transport_frames(T, np.array([1.0, 0, 0]))
     r = _profile(t)
     th = np.linspace(0, 2 * np.pi, n_seg, endpoint=False)
     flat = P["tail_flatten"]
-    rings = []
-    for i in range(n_rings - 1):
-        ring = C_[i] + r[i] * (np.cos(th)[:, None] * N[i] * flat + np.sin(th)[:, None] * B[i])
-        rings.append(ring)
+    rings = [C_[i] + r[i] * (np.cos(th)[:, None] * N[i] * flat + np.sin(th)[:, None] * B[i]) for i in range(n_rings)]
+    tv = [np.full(n_seg, t[i]) for i in range(n_rings)]
+    re = r[-1]
+    for k in range(1, cap_rings):
+        a = k / cap_rings * np.pi / 2
+        c = C_[-1] + T[-1] * re * np.sin(a)
+        rings.append(c + re * np.cos(a) * (np.cos(th)[:, None] * N[-1] * flat + np.sin(th)[:, None] * B[-1]))
+        tv.append(np.full(n_seg, 1.0))
     V = np.vstack(rings)
-    F = grid_faces(n_rings - 1, n_seg)
-    V, F = cap(V, F, (n_rings - 2) * n_seg, n_seg, C_[-1][None], flip=False)
+    nr = len(rings)
+    F = grid_faces(nr, n_seg)
+    V, F = cap(V, F, (nr - 1) * n_seg, n_seg, (C_[-1] + T[-1] * re)[None], flip=False)
     V, F = cap(V, F, 0, n_seg, (C_[0] - T[0] * 0.03)[None], flip=True)
-    tv = np.concatenate([np.repeat(t[:-1], n_seg), [1.0, 0.0]])
+    tv = np.concatenate(tv + [np.array([1.0, 0.0])])
     if np.einsum("ij,ij->i", V[F[:, 0]] - V.mean(0), np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])).sum() < 0:
         F = F[:, ::-1].copy()
     Nn = vertex_normals(V, F)

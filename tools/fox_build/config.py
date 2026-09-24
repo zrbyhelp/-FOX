@@ -18,7 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 SPEC = json.loads((ROOT / "spec.json").read_text(encoding="utf-8"))
 
 FPS = 30
-EPS_SCALE = tuple(SPEC["expressions"]["hiddenScale"])  # (1, 0.001, 1)
+EPS_SCALE = tuple(SPEC["expressions"]["hiddenScale"])  # uniform 0.001
 
 # --------------------------------------------------------------------------------------
 # Colours (sRGB hex, sampled from reference/1.webp). Use linear() before writing to
@@ -94,26 +94,27 @@ P = {
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
     "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.063,
-    "paw_radius": 0.069,
+    "arm_radius": 0.058,
+    "paw_radius": 0.055,
     "leg_radius": 0.066,
-    "foot_size": (0.126, 0.158, 0.080),      # x width, y length, z height
+    "foot_size": (0.122, 0.132, 0.084),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
-    "tail_radius_profile": [(0.0, 0.055), (0.12, 0.095), (0.42, 0.140), (0.68, 0.126),
-                            (0.88, 0.078), (0.97, 0.034), (1.0, 0.0)],
-    "tail_flatten": 0.88,                    # cross-section squash (lateral)
-    "tail_orange_from": 0.72,                # t where the orange tip gradient starts
+    "tail_radius_profile": [(0.0, 0.048), (0.10, 0.088), (0.32, 0.145), (0.52, 0.140),
+                            (0.72, 0.098), (0.86, 0.054), (0.95, 0.020), (1.0, 0.0)],
+    "tail_flatten": 0.92,                    # cross-section squash (lateral)
+    "tail_orange_from": 0.68,                # t where the orange tip gradient starts
 }
 
 # Tail centre-line (cubic Catmull-Rom through these points). Root sits inside the butt on
-# the mid-line; the tail sweeps back (+Y), then up, leaning ~40deg to the fox's LEFT (+X),
+# the mid-line; the tail sweeps back (+Y), then up, leaning ~15deg to the fox's LEFT (+X),
 # tip curling slightly forward. Centre-line length ~0.66 (~ +15% vs the reference art).
 TAIL_SPLINE = [
-    (0.000, 0.110, 0.160),
-    (0.060, 0.250, 0.140),
-    (0.185, 0.335, 0.270),
-    (0.262, 0.335, 0.440),
-    (0.285, 0.272, 0.568),
+    (0.000, 0.105, 0.165),
+    (0.022, 0.245, 0.140),
+    (0.072, 0.352, 0.258),
+    (0.108, 0.378, 0.425),
+    (0.112, 0.332, 0.560),
+    (0.090, 0.270, 0.622),
 ]
 
 # --------------------------------------------------------------------------------------
@@ -122,6 +123,8 @@ TAIL_SPLINE = [
 # --------------------------------------------------------------------------------------
 _A = math.radians(40.0)
 _ARM_DIR = (math.sin(_A), 0.0, -math.cos(_A))
+SHOULDER = (0.118, -0.058, 0.346)      # upperArm pivot (fox's left), front-side of the chest
+ARM_LEN = (0.096, 0.088, 0.058)        # upperArm, forearm, paw (~1/4 of the height, like the art)
 
 
 def _along(p, d, length):
@@ -133,6 +136,30 @@ def _tail_points(n_bones: int = 6):
     sp = Spline(TAIL_SPLINE)
     ts = np.linspace(0.0, 1.0, n_bones + 1)
     return [tuple(sp.point_at_arclength(t)) for t in ts]
+
+
+def paw_frame(side="L"):
+    """Rest-pose paw frame (bind pose). x = across the paw toward the thumb (medial),
+    y = along the arm, z = back of the hand (front of the fox at rest), palm = -z.
+    The right paw's frame is the exact mirror (x -> -x) of the left one."""
+    if side == "R":
+        m = np.array([-1.0, 1.0, 1.0])
+        return {k: (v * m if isinstance(v, np.ndarray) else v) for k, v in paw_frame("L").items()}
+    up = np.array(SHOULDER)
+    ax = np.array(_ARM_DIR)
+    wr = up + ax * (ARM_LEN[0] + ARM_LEN[1])
+    pc = wr + ax * 0.030
+    x = np.cross(ax, (0.0, -1.0, 0.0)); x /= np.linalg.norm(x)
+    z = np.cross(x, ax)
+    pr = P["paw_radius"]
+    tdir = 0.62 * x + 0.78 * ax
+    tbase = pc + x * pr * 0.72 + ax * pr * 0.05 - z * pr * 0.15
+    return {
+        "centre": pc, "x": x, "y": ax, "z": z,
+        "knuckle": pc + ax * pr * 0.45, "finger_tip": pc + ax * pr * 1.35,
+        "thumb_base": tbase, "thumb_tip": tbase + tdir * 0.030,
+        "finger_offsets": (-0.0195, 0.0, 0.0195), "finger_r": 0.0135, "thumb_r": 0.0135,
+    }
 
 
 def bone_table() -> dict:
@@ -161,16 +188,21 @@ def bone_table() -> dict:
     b["mouthSmile"] = ("head", (mx, -0.215, mz), (mx, -0.215, mz + 0.04))
     b["mouthOpen"] = ("head", (mx, -0.215, mz), (mx, -0.215, mz + 0.04))
     for s, sx in (("L", 1), ("R", -1)):
-        sh = (sx * 0.050, -0.040, 0.382)
-        up = (sx * 0.118, -0.045, 0.372)
+        # shoulder pivot on the body's side surface, just under the scarf ring
+        sh = (sx * 0.052, -0.040, 0.354)
+        up = (sx * SHOULDER[0], SHOULDER[1], SHOULDER[2])
         d = (sx * _ARM_DIR[0], _ARM_DIR[1], _ARM_DIR[2])
-        el = _along(up, d, 0.095)
-        wr = _along(el, d, 0.080)
-        tip = _along(wr, d, 0.062)
+        el = _along(up, d, ARM_LEN[0])
+        wr = _along(el, d, ARM_LEN[1])
+        tip = _along(wr, d, ARM_LEN[2])
         b[f"shoulder_{s}"] = ("chest", sh, up)
         b[f"upperArm_{s}"] = (f"shoulder_{s}", up, el)
         b[f"forearm_{s}"] = (f"upperArm_{s}", el, wr)
         b[f"paw_{s}"] = (f"forearm_{s}", wr, tip)
+        # fingers (three nubs driven together) and thumb, from the paw frame
+        pf = paw_frame(s)
+        b[f"fingers_{s}"] = (f"paw_{s}", tuple(pf["knuckle"]), tuple(pf["finger_tip"]))
+        b[f"thumb_{s}"] = (f"paw_{s}", tuple(pf["thumb_base"]), tuple(pf["thumb_tip"]))
     b["scarf"] = ("chest", (0, 0.0, 0.405), (0, 0.0, 0.445))
     b["scarfFlap_1"] = ("scarf", (0.075, -0.125, 0.385), (0.083, -0.148, 0.31))
     b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.148, 0.31), (0.09, -0.155, 0.235))

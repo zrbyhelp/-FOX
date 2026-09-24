@@ -143,8 +143,10 @@ def validate_shipped(path: Path, r: Report):
 
 def khronos(path: Path, r: Report):
     try:
-        out = subprocess.run(["npx", "--yes", "gltf-validator", str(path), "-o"], capture_output=True,
-                             text=True, timeout=300, cwd=C.ROOT / "web")
+        import shutil
+        npx = shutil.which("npx") or "npx"
+        out = subprocess.run([npx, "--yes", "gltf-validator", str(path), "-o"], capture_output=True,
+                             text=True, encoding="utf-8", errors="replace", timeout=300, cwd=C.ROOT / "web")
         txt = out.stdout + out.stderr
         m = re.search(r'"numErrors":\s*(\d+)', txt)
         errs = int(m.group(1)) if m else -1

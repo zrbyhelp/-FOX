@@ -145,6 +145,8 @@ def vis_of(p: Pose):
 # ------------------------------------------------------------------ IK
 def _solve_two_bone(S, L1, L2, T, pole):
     D = T - S
+    if np.linalg.norm(D) < 1e-6:          # target on the joint: aim straight down
+        D = np.array([0.0, 0.0, -1e-3])
     d = np.linalg.norm(D)
     d = np.clip(d, abs(L1 - L2) + 1e-4, L1 + L2 - 1e-4)
     u = D / np.linalg.norm(D)
@@ -154,6 +156,8 @@ def _solve_two_bone(S, L1, L2, T, pole):
     v = np.asarray(pole, float) - (np.asarray(pole, float) @ u) * u
     if np.linalg.norm(v) < 1e-8:
         v = np.cross(u, [0, 0, 1.0])
+    if np.linalg.norm(v) < 1e-8:          # pole and target both vertical
+        v = np.cross(u, [1.0, 0, 0])
     v /= np.linalg.norm(v)
     return S + u * a + v * h, T
 
@@ -244,6 +248,18 @@ class Skin:
         return out
 
 
+    def deform_normals(self, pose, N):
+        """Blend-rotate per-vertex normals N (same vertex order as self.V)."""
+        Qw, _ = self.rig.fk(pose)
+        out = np.zeros_like(N)
+        for i, b in enumerate(self.bones):
+            w = self.W[:, i]
+            m = w > 1e-6
+            if m.any():
+                out[m] += w[m, None] * _qrot_many(Qw[b], N[m])
+        return out / np.maximum(np.linalg.norm(out, axis=1, keepdims=True), 1e-12)
+
+
 def _qrot_many(q, v):
     w, x, y, z = q
     u = np.array([x, y, z])
@@ -259,3 +275,128 @@ def ground(skin: Skin, pose: Pose, floor=0.0):
     loc[2] += dz
     pose.loc["root"] = loc
     return pose
+
+
+# ------------------------------------------------------------------ collision-aware arm solver
+def rotvec_q(r):
+    r = np.asarray(r, float)
+    a = np.linalg.norm(r)
+    if a < 1e-9:
+        return IDENT.copy()
+    return qaxis(r / a, math.degrees(a))
+
+
+def to_rest_space(rig, Qw, Hw, bone, pts):
+    """Posed world points -> the rest space of `bone` (to evaluate that part's rest SDF)."""
+    return _qrot_many(qconj(Qw[bone]), pts - Hw[bone]) + rig.head[bone]
+
+
+def _q2m(q):
+    w, x, y, z = q
+    return np.array([[1 - 2 * (y * y + z * z), 2 * (x * y - w * z), 2 * (x * z + w * y)],
+                     [2 * (x * y + w * z), 1 - 2 * (x * x + z * z), 2 * (y * z - w * x)],
+                     [2 * (x * z - w * y), 2 * (y * z + w * x), 1 - 2 * (x * x + y * y)]])
+
+
+def q_to_rotvec(q):
+    q = qnorm(q)
+    if q[0] < 0:
+        q = -q
+    s = np.linalg.norm(q[1:])
+    if s < 1e-9:
+        return np.zeros(3)
+    return q[1:] / s * 2 * math.atan2(s, q[0])
+
+
+class ArmSolver:
+    """Places a paw (centre of the mitten) at a target while keeping the arm outside the body
+    and head. Unknowns: upperArm + forearm + paw rotations (axis-angle, armature axes,
+    relative to the parent). Only the three arm bones are re-evaluated per step (fast), and the
+    search starts from the analytic 2-bone IK solution. Elbow twist and extreme bends are
+    penalised so poses stay natural."""
+
+    def __init__(self, rig: Rig, arm_parts: dict, body_sdf, head_sdf, stride=10):
+        self.rig = rig
+        self.body_sdf = body_sdf
+        self.head_sdf = head_sdf
+        self.samples = {}
+        for s in ("L", "R"):
+            part = arm_parts[s]
+            V = np.asarray(part.verts)[::stride]
+            names = [f"upperArm_{s}", f"forearm_{s}", f"paw_{s}"]
+            W = np.stack([np.asarray(part.weights.get(n, np.zeros(len(part.verts))))[::stride] for n in names], 1)
+            for extra in (f"fingers_{s}", f"thumb_{s}"):      # fingers ride on the paw here
+                if extra in part.weights:
+                    W[:, 2] += np.asarray(part.weights[extra])[::stride]
+            W /= np.maximum(W.sum(1, keepdims=True), 1e-9)
+            self.samples[s] = (V, W)
+
+    def solve(self, pose: Pose, side: str, target, aim=None, margin=0.004, bend_max=95.0,
+              head_margin=0.002, iters=2500, palm=None):
+        from scipy.optimize import minimize
+        rig = self.rig
+        ua, fa, pw = f"upperArm_{side}", f"forearm_{side}", f"paw_{side}"
+        target = np.asarray(target, float)
+        aim = None if aim is None else np.asarray(aim, float) / np.linalg.norm(aim)
+        palm = None if palm is None else np.asarray(palm, float) / np.linalg.norm(palm)
+        palm_rest = -np.asarray(C.paw_frame(side)["z"], float)       # palm normal in the bind pose
+        Qw, Hw = rig.fk(pose)
+        Qs = Qw[rig.parent[ua]]
+        H_ua = Hw[ua]
+        Rc, Hc = _q2m(Qw["chest"]), Hw["chest"]
+        Rh, Hh = _q2m(Qw["head"]), Hw["head"]
+        hc_rest, hh_rest = rig.head["chest"], rig.head["head"]
+        V, W = self.samples[side]
+        h_ua, h_fa, h_pw = rig.head[ua], rig.head[fa], rig.head[pw]
+        off_fa, off_pw = h_fa - h_ua, h_pw - h_fa
+        pc_local = (rig.tail[pw] - h_pw) * 0.45
+        paw_dir = rig.dir[pw]
+        fa_axis = rig.dir[fa]
+        Vl = [V - h_ua, V - h_fa, V - h_pw]
+        far_rest = np.linalg.norm(V - h_ua, axis=1) > 0.075
+
+        def chain(x):
+            Q1 = qmul(Qs, rotvec_q(x[0:3])); R1 = _q2m(Q1)
+            H2 = H_ua + R1 @ off_fa
+            Q2 = qmul(Q1, rotvec_q(x[3:6])); R2 = _q2m(Q2)
+            H3 = H2 + R2 @ off_pw
+            Q3 = qmul(Q2, rotvec_q(x[6:9])); R3 = _q2m(Q3)
+            return (R1, R2, R3), (H_ua, H2, H3)
+
+        def cost(x):
+            Rs, Hs = chain(x)
+            pc = Hs[2] + Rs[2] @ pc_local
+            e = np.sum((pc - target) ** 2) / 0.006 ** 2
+            if aim is not None:
+                e += 40.0 * (1.0 - (Rs[2] @ paw_dir) @ aim)
+            if palm is not None:
+                e += 25.0 * (1.0 - (Rs[2] @ palm_rest) @ palm)
+            else:
+                e += 2.0 * np.sum(x[6:9] ** 2)
+            P = (W[:, 0:1] * (Vl[0] @ Rs[0].T + Hs[0]) + W[:, 1:2] * (Vl[1] @ Rs[1].T + Hs[1])
+                 + W[:, 2:3] * (Vl[2] @ Rs[2].T + Hs[2]))
+            pb = (P[far_rest] - Hc) @ Rc + hc_rest
+            e += np.sum(np.maximum(margin - self.body_sdf(pb), 0.0) ** 2) / 0.003 ** 2
+            ph = (P - Hh) @ Rh + hh_rest
+            near = ph[:, 2] > 0.36
+            if near.any():
+                e += np.sum(np.maximum(head_margin - self.head_sdf(ph[near]), 0.0) ** 2) / 0.003 ** 2
+            twist = x[3:6] @ fa_axis
+            bend = math.degrees(np.linalg.norm(x[3:6]))
+            e += 30.0 * twist ** 2 + 0.02 * max(bend - bend_max, 0.0) ** 2
+            e += 0.3 * np.sum(x[6:9] ** 2) + 0.05 * np.sum(x[0:3] ** 2)
+            return e
+
+        # start from analytic IK (wrist ~ target minus half a paw along the aim)
+        guess = pose.copy()
+        d = aim if aim is not None else (target - H_ua) / max(np.linalg.norm(target - H_ua), 1e-6)
+        arm_ik(rig, guess, side, target - d * np.linalg.norm(pc_local) * 1.0)
+        if aim is not None:
+            aim_bone(rig, guess, pw, aim)
+        x0 = np.r_[q_to_rotvec(guess.rot[ua]), q_to_rotvec(guess.rot[fa]), q_to_rotvec(guess.rot.get(pw, IDENT))]
+        r = minimize(cost, x0, method="Powell", options=dict(maxiter=iters, xtol=1e-3, ftol=1e-7))
+        x = r.x
+        pose.rot[ua] = rotvec_q(x[0:3]); pose.rot[fa] = rotvec_q(x[3:6]); pose.rot[pw] = rotvec_q(x[6:9])
+        Rs, Hs = chain(x)
+        err = float(np.linalg.norm(Hs[2] + Rs[2] @ pc_local - target))
+        return pose, x, err

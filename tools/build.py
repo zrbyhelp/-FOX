@@ -112,12 +112,22 @@ def build_lock(path):
         yield
 
 
+def build_layers(bpy):
+    """Static front-pose meshes for the Live2D-style puppet (web/scripts/render_layers.mjs)."""
+    from fox_build import export, layers
+    bpy.ops.wm.read_factory_settings(use_empty=True)
+    layers.build(bpy)
+    export.export_glb(bpy, layers.OUT_GLB, export_animations=False, export_skins=False)
+    print(f"[build] wrote {layers.OUT_GLB} + {layers.OUT_RIG}")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--blockout", action="store_true")
     ap.add_argument("--no-logo", action="store_true")
     ap.add_argument("--no-blend", action="store_true")
     ap.add_argument("--no-fox", action="store_true")
+    ap.add_argument("--layers", action="store_true", help="also build the Live2D layer source (fox_layers.glb)")
     ap.add_argument("--out-name", default="fox",
                     help="'fox' -> web/public/models/fox.glb (+ .blend); anything else -> "
                          "web/public/models/dev/<name>.glb (scratch output, no .blend)")
@@ -129,6 +139,8 @@ def main():
             build_fox(bpy, a.blockout, not a.no_blend, a.out_name)
         if not a.no_logo:
             build_logo(bpy)
+        if a.layers:
+            build_layers(bpy)
 
 
 if __name__ == "__main__":

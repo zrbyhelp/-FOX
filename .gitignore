@@ -7,3 +7,4 @@ build/
 *.blend1
 .build.lock
 web/public/models/dev/
+web/public/models/fox_layers.glb

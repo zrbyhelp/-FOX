@@ -113,6 +113,8 @@ def make_action(bpy, arm, name: str, keys: list, loop: bool = False, rest=None):
     arm.animation_data.action = act
     arm.animation_data.action_slot = slot
 
+    # every frame is keyed, so linear interpolation reproduces the sampled motion exactly
+    bpy.context.preferences.edit.keyframe_new_interpolation_type = "LINEAR"
     default_visible = set(C.SPEC["expressions"]["defaultVisible"])
     prev_q = {}
     for frame, pose in keys:

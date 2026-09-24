@@ -40,7 +40,7 @@ def head_colors(V, N):
     d_in = ear_inner(V)
     ql = ear_local(V)
     t_ear = np.clip(ql[:, 1] / EAR_LEN, 0, 1)
-    inner = S.smoothstep(0.006, 0.001, d_in) * S.smoothstep(-0.01, 0.01, ql[:, 2])
+    inner = S.smoothstep(0.011, 0.0, d_in) * S.smoothstep(-0.01, 0.01, ql[:, 2])
     ear_col = _mix(np.tile(C.linear("orange_light"), (len(V), 1)), C.linear("orange"),
                    S.smoothstep(0.05, 0.35, t_ear))
     col = _mix(col, ear_col, inner)
@@ -104,8 +104,8 @@ def arm_colors(V, N, side="L"):
     L1 = np.linalg.norm(el - sh); L2 = L1 + np.linalg.norm(wr - el)
     Lt = L2 + np.linalg.norm(tip - wr)
     cream = C.linear("fur")
-    g1 = S.smoothstep(L2 - 0.055, L2 - 0.005, s)       # cream -> light orange
-    g2 = S.smoothstep(L2 - 0.010, Lt - 0.015, s)       # light -> orange (saturated tips)
+    g1 = S.smoothstep(L2 - 0.014, L2 + 0.022, s)       # cream -> light orange (paw only)
+    g2 = S.smoothstep(L2 + 0.018, Lt + 0.012, s)       # light -> orange at the toes
     col = _mix(np.tile(cream, (len(V), 1)), C.linear("orange_light"), g1)
     return _mix(col, C.linear("orange"), g2)
 
@@ -116,7 +116,23 @@ def arm_weights(V, side="L"):
     L1 = np.linalg.norm(el - sh); L2 = L1 + np.linalg.norm(wr - el)
     e = S.smoothstep(L1 - 0.036, L1 + 0.036, s)
     w = S.smoothstep(L2 - 0.024, L2 + 0.024, s)
-    return {f"upperArm_{side}": 1 - e, f"forearm_{side}": e - w, f"paw_{side}": w}
+    # fingers / thumb: vertices on the nubs (share of the paw weight)
+    f = C.paw_frame(side)
+    along = (V - f["knuckle"]) @ f["y"]
+    dist_f = np.full(len(V), np.inf)
+    for off in f["finger_offsets"]:
+        a = f["knuckle"] + f["x"] * off; b = f["finger_tip"] + f["x"] * off
+        ab = b - a; t = np.clip(((V - a) @ ab) / (ab @ ab), 0, 1)
+        dist_f = np.minimum(dist_f, np.linalg.norm(V - (a + t[:, None] * ab), axis=1))
+    wf = S.smoothstep(f["finger_r"] + 0.010, f["finger_r"] + 0.002, dist_f) * S.smoothstep(-0.016, 0.020, along)
+    tb, tt = f["thumb_base"], f["thumb_tip"]
+    ab = tt - tb; t = np.clip(((V - tb) @ ab) / (ab @ ab), 0, 1)
+    dist_t = np.linalg.norm(V - (tb + t[:, None] * ab), axis=1)
+    wt = S.smoothstep(f["thumb_r"] + 0.009, f["thumb_r"] + 0.002, dist_t) * S.smoothstep(0.0, 0.35, t)
+    wt = np.where(wf >= wt, 0.0, wt)
+    wf = np.minimum(wf, 1.0 - wt)
+    return {f"upperArm_{side}": 1 - e, f"forearm_{side}": e - w, f"paw_{side}": w * (1 - wf - wt),
+            f"fingers_{side}": w * wf, f"thumb_{side}": w * wt}
 
 
 def leg_colors(V, N, side="L"):

@@ -22,10 +22,14 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   renderer.shadowMap.type = THREE.VSMShadowMap;
 
   const scene = new THREE.Scene();
-  const pmrem = new THREE.PMREMGenerator(renderer);
-  scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+  function buildEnvironment() {
+    const pmrem = new THREE.PMREMGenerator(renderer);
+    scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+    pmrem.dispose();
+  }
+  buildEnvironment();
   scene.environmentIntensity = 0.62;
-  pmrem.dispose();
+  canvas.addEventListener('webglcontextrestored', buildEnvironment); // GPU reset loses the env map
 
   // Key: upper-left front, warm, soft shadows.
   const key = new THREE.DirectionalLight(0xfff0e0, 2.1);
@@ -77,7 +81,7 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
     new THREE.Box3().setFromCenterAndSize(lp, new THREE.Vector3(0.44, 0.44, 0.2)),
   ];
   let insetBottom = 0; // CSS px covered by the toolbar
-  let shift = { x: 0, y: 0 }; // view offset (CSS px) that centres the content in the usable area
+  let shift = { x: 0, y: 0 }; // view offset (fractions of the canvas size) centring the content
   let viewName = 'ref34';
 
   function size() {
@@ -86,7 +90,7 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
 
   function applyOffset() {
     const { w, h } = size();
-    if (shift.x || shift.y) camera.setViewOffset(w, h, shift.x, shift.y, w, h);
+    if (shift.x || shift.y) camera.setViewOffset(w, h, shift.x * w, shift.y * h, w, h);
     else camera.clearViewOffset();
     camera.updateProjectionMatrix();
   }
@@ -135,7 +139,7 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
     if (fitContent && (k > 1 || insetBottom > 0)) {
       const cx = (box.min.x + box.max.x) / 2;
       const cy = (box.min.y + box.max.y) / 2;
-      shift = { x: k > 1 ? (cx * w) / 2 : 0, y: ((1 - cy) / 2) * h - (usable * h) / 2 };
+      shift = { x: k > 1 ? cx / 2 : 0, y: (1 - cy) / 2 - usable / 2 };
     }
     controls.target.copy(target);
     controls.maxDistance = Math.max(6, offset.length() * k * 1.3);

@@ -70,6 +70,7 @@ export class Interaction {
 
   onDown(e) {
     if (e.target !== this.canvas || !e.isPrimary) return;
+    if (e.pointerType === 'mouse' && e.button !== 0) return; // right/middle click: not a poke
     this.onMove(e);
     const part = this.pick(e.clientX, e.clientY);
     if (!part) return; // empty space -> OrbitControls rotates the view

@@ -159,4 +159,12 @@ async function main() {
   window.__foxReady = true;
 }
 
-main();
+main().catch((err) => {
+  console.error(err);
+  const el = document.querySelector('.loader');
+  if (el) {
+    el.textContent = '无法启动 3D:浏览器不支持 WebGL,或模型加载失败';
+    el.classList.remove('hidden');
+    el.classList.add('error');
+  }
+});

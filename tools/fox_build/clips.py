@@ -8,15 +8,16 @@ on the floor) unless the clip is airborne.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 import numpy as np
 
 from . import config as C
 from .anim import IDENT, make_action, qeuler, qmirror, qmul, qnorm
-from .poses import Pose, Rig, Skin, aim_bone, arm_ik, blend, ground, qrot, vis_of
+from .poses import ArmSolver, Pose, Rig, Skin, aim_bone, arm_ik, blend, ground, qrot, vis_of
 
 FPS = C.FPS
-STEP = 2  # key every 2 frames; the exporter samples every frame
+STEP = 1  # key every frame (linear interpolation) -> no spline overshoot between keys
 
 LOGO_B = np.array([-0.56, -0.20, 0.50])  # spec.logo (glTF -> Blender: (x, -z, y))
 
@@ -51,6 +52,22 @@ def paw_to(rig, pose, side, wrist, aim=None, pole=None, twist=0.0, space="chest"
     return pose
 
 
+def fingers(pose, side, curl=25.0, thumb=15.0):
+    """Curl the three finger nubs and the thumb toward the palm (degrees; 0 = straight)."""
+    from .anim import qaxis
+    x = np.asarray(C.paw_frame("L")["x"], float)
+    qf, qt = qaxis(x, -curl), qaxis(x, -thumb)
+    if side == "R":
+        qf, qt = qmirror(qf), qmirror(qt)
+    pose.rot[f"fingers_{side}"] = qf
+    pose.rot[f"thumb_{side}"] = qt
+    return pose
+
+
+def both_fingers(pose, curl=25.0, thumb=15.0):
+    return fingers(fingers(pose, "L", curl, thumb), "R", curl, thumb)
+
+
 def tail_curve(pose, x=0.0, z=0.0, falloff=1.0, start=1):
     for i in range(start, 7):
         k = falloff ** (i - start)
@@ -65,69 +82,137 @@ def mirror_pose_arms(pose):
     return pose
 
 
+# ------------------------------------------------------------------ arm solver (+ cache)
+_SOLVER = {}
+
+
+def get_solver(rig: Rig):
+    key = id(rig)
+    if key not in _SOLVER:
+        from . import model, shapes
+        parts = {p.name: p for p in model.build_parts() if p.name in ("Arm_L", "Arm_R")}
+        _SOLVER[key] = ArmSolver(rig, {"L": parts["Arm_L"], "R": parts["Arm_R"]},
+                                 shapes.body_sdf, shapes.head_sdf)
+    return _SOLVER[key]
+
+
+class _SolveCache:
+    """Solutions keyed by the inputs + the source of everything that shapes the arms/body."""
+    def __init__(self):
+        import hashlib, json
+        from . import model
+        here = Path(__file__).resolve().parent
+        h = hashlib.sha1()
+        for f in ("shapes.py", "poses.py", "sdf.py"):
+            h.update((here / f).read_bytes())
+        h.update(repr(sorted(C.P.items())).encode())
+        h.update(repr(list(C.bone_table().items())).encode())
+        self.salt = h.hexdigest()[:12]
+        self.path = C.BUILD_DIR / "cache" / "arm_solutions.json"
+        try:
+            self.data = json.loads(self.path.read_text())
+        except Exception:  # noqa: BLE001
+            self.data = {}
+        self.dirty = False
+        import atexit
+        atexit.register(self.save)   # QA tools build clips without going through build_clips
+
+    def key(self, pose, side, target, aim, extra):
+        parts = [self.salt, side, np.round(target, 4).tolist(), None if aim is None else np.round(aim, 3).tolist(), extra]
+        for b in ("root", "hips", "spine", "chest", "neck", "head", f"shoulder_{side}"):
+            parts.append(np.round(pose.rot.get(b, np.array([1.0, 0, 0, 0])), 4).tolist())
+        return repr(parts)
+
+    def save(self):
+        if self.dirty:
+            import json
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.data))
+            self.dirty = False
+
+
+_CACHE = None
+
+
 # ------------------------------------------------------------------ key poses
 class Lib:
     def __init__(self, rig: Rig):
         self.rig = rig
 
+    def arm(self, p, side, paw_centre, aim=None, **kw):
+        """Place the paw centre (rest space, carried by the posed chest) with the collision-aware
+        solver. aim: desired paw direction (rest space)."""
+        global _CACHE
+        _CACHE = _CACHE or _SolveCache()
+        tgt = in_chest(self.rig, p, paw_centre)
+        aim_w = dir_chest(self.rig, p, aim) if aim is not None else None
+        if kw.get("palm") is not None:
+            kw["palm"] = tuple(np.round(dir_chest(self.rig, p, kw["palm"]), 5))
+        k = _CACHE.key(p, side, tgt, aim_w, sorted(kw.items()))
+        if k in _CACHE.data:
+            x = np.array(_CACHE.data[k])
+            from .poses import rotvec_q
+            p.rot[f"upperArm_{side}"] = rotvec_q(x[0:3]); p.rot[f"forearm_{side}"] = rotvec_q(x[3:6])
+            p.rot[f"paw_{side}"] = rotvec_q(x[6:9])
+            return p
+        _, x, err = get_solver(self.rig).solve(p, side, tgt, aim_w, **kw)
+        if err > 0.02:
+            print(f"[clips] arm {side} target miss {err * 100:.1f}cm at {np.round(tgt, 3)}")
+        _CACHE.data[k] = x.tolist(); _CACHE.dirty = True
+        return p
+
     def base(self):
         return Pose()
 
     def stand(self):
-        """Neutral standing pose: paws held loosely in front of the chest."""
+        """Neutral standing pose: arms relaxed at the sides, paws resting on the belly sides."""
         p = Pose()
         p.set("ear_L", y=-4, mirror=True)
         for s, sx in (("L", 1), ("R", -1)):
-            paw_to(self.rig, p, s, (sx * 0.088, -0.168, 0.292), aim=(sx * -0.25, -0.35, -1.0),
-                   pole=(sx * 1.0, 0.3, -0.8))
-        return p
+            self.arm(p, s, (sx * 0.212, -0.092, 0.180), aim=(sx * 0.20, -0.30, -1.0))
+        return both_fingers(p, 85, 60)   # relaxed: fingers folded into a mitten
 
     def clasp(self, p=None):
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            paw_to(self.rig, p, s, (sx * 0.046, -0.180, 0.322), aim=(sx * -0.25, -0.35, 1.0),
-                   pole=(sx * 1.0, 0.2, -1.0))
-        return p
+            self.arm(p, s, (sx * 0.034, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0))
+        return both_fingers(p, 85, 60)
 
     def heart(self, p=None):
         """Ref 7: paws form a heart at the chest (tips meet low in the middle)."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            paw_to(self.rig, p, s, (sx * 0.062, -0.190, 0.322), aim=(sx * -0.75, -0.25, -0.55),
-                   pole=(sx * 1.0, 0.3, -0.6))
-        return p
+            # paws meet at the chest, fingertips touching (the web adds a pink heart that pops out)
+            self.arm(p, s, (sx * 0.050, -0.240, 0.300), aim=(sx * -0.2, -0.35, 0.9), palm=(-sx * 0.9, 0.0, 0.2))
+        return both_fingers(p, 85, 20)
 
     def paw_chest(self, p, side, low=False):
         sx = 1 if side == "L" else -1
-        if low:   # resting on the belly, elbow only lightly bent
-            return paw_to(self.rig, p, side, (sx * 0.088, -0.178, 0.268), aim=(sx * -0.55, -0.45, 0.2),
-                          pole=(sx * 1.0, 0.3, -1.0))
-        return paw_to(self.rig, p, side, (sx * 0.060, -0.180, 0.300), aim=(sx * -0.35, -0.4, 0.9),
-                      pole=(sx * 1.0, 0.3, -1.0))
+        if low:   # resting on the belly
+            return fingers(self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2)), side, 85, 60)
+        return fingers(self.arm(p, side, (sx * 0.055, -0.218, 0.298), aim=(sx * -0.30, -0.30, 1.0)), side, 85, 60)
 
     def wave_up(self, p, side="L", swing=0.0):
         sx = 1 if side == "L" else -1
-        paw_to(self.rig, p, side, (sx * 0.200, -0.105, 0.500), aim=(sx * (0.25 + swing), -0.25, 1.0),
-               pole=(sx * 1.0, 0.4, -0.6))
-        return p
+        self.arm(p, side, (sx * 0.282, -0.110, 0.468), aim=(sx * (0.25 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
+        return fingers(p, side, 4, 5)
 
     def present(self, p, side="R"):
         sx = 1 if side == "L" else -1
-        return paw_to(self.rig, p, side, (sx * 0.245, -0.150, 0.340), aim=(sx * 1.0, -0.55, 0.25),
-                      pole=(sx * 0.6, 0.6, -1.0), twist=-70)
+        self.arm(p, side, (sx * 0.285, -0.150, 0.330), aim=(sx * 1.0, -0.50, 0.20), palm=(0.0, -0.2, 1.0))
+        return fingers(p, side, 2, 0)
 
     def reach(self, p, side="R"):
         sx = 1 if side == "L" else -1
-        return paw_to(self.rig, p, side, (sx * 0.215, -0.170, 0.505), aim=(sx * 0.55, -0.45, 1.0),
-                      pole=(sx * 1.0, 0.5, -0.4), space="chest")
+        self.arm(p, side, (sx * 0.262, -0.205, 0.440), aim=(sx * 0.60, -0.55, 0.8))
+        return fingers(p, side, 12, 8)
 
     def shrug(self, p):
-        for s, sx in (("L", 1), ("R", -1)):
-            paw_to(self.rig, p, s, (sx * 0.225, -0.135, 0.325), aim=(sx * 1.0, -0.5, 0.35),
-                   pole=(sx * 0.5, 0.6, -1.0), twist=-65)
         p.set("shoulder_L", y=-9, mirror=True)
-        return p
+        for s, sx in (("L", 1), ("R", -1)):
+            self.arm(p, s, (sx * 0.280, -0.140, 0.300), aim=(sx * 1.0, -0.40, 0.30), palm=(0.0, -0.2, 1.0))
+        return both_fingers(p, 6, 4)
 
     def sit(self, p=None, lean=0.0):
         """Sitting on the floor, legs forward (soles to the camera), tail curled to the left."""
@@ -140,8 +225,8 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=-30, z=-10)
-        tail_curve(p, x=-4, z=-24, start=2, falloff=0.95)
+        p.set("tail_1", x=-8, z=-30)
+        tail_curve(p, x=-3, z=-20, start=2, falloff=0.95)
         return p
 
     def stand_legs(self, p):
@@ -171,28 +256,125 @@ class Clip:
         return p
 
 
-def lift_tail(tail_skin: Skin, pose: Pose, clearance=0.003, step=2.0, max_steps=40):
-    """Pitch tail_1 up until the whole tail clears the floor."""
-    for _ in range(max_steps):
-        if tail_skin.deform(pose)[:, 2].min() >= clearance:
-            break
-        pose.add("tail_1", x=step)
-    return pose
+def tail_lift_needed(tail_skin: Skin, pose: Pose, clearance=0.004):
+    """Smallest tail_1 pitch-up (deg) that makes the whole tail clear the floor (bisection)."""
+    if tail_skin.deform(pose)[:, 2].min() >= clearance:
+        return 0.0
+    lo, hi = 0.0, 90.0
+    for _ in range(12):
+        mid = 0.5 * (lo + hi)
+        q = pose.copy()
+        q.add("tail_1", x=mid)
+        if tail_skin.deform(q)[:, 2].min() >= clearance:
+            hi = mid
+        else:
+            lo = mid
+    return hi
+
+
+def _smooth(x, sigma, loop, envelope=False):
+    """Gaussian smoothing of a per-frame series (circular for loops). envelope=True keeps the
+    result >= the input (running max first) so smoothed lifts never under-shoot."""
+    x = np.asarray(x, float)
+    if len(x) < 3 or sigma <= 0:
+        return x
+    r = int(3 * sigma)
+    pad = (lambda a: np.concatenate([a[-r - 1:-1], a, a[1:r + 1]])) if loop else \
+          (lambda a: np.concatenate([np.full(r, a[0]), a, np.full(r, a[-1])]))
+    y = pad(x)
+    if envelope:
+        y = np.array([y[max(0, i - r // 2):i + r // 2 + 1].max() for i in range(len(y))])
+    k = np.exp(-0.5 * (np.arange(-r, r + 1) / sigma) ** 2)
+    k /= k.sum()
+    return np.convolve(y, k, mode="same")[r:-r]
+
+
+class FlapGuard:
+    """Keeps the arms from passing through the hanging scarf flap: the flap (an oriented
+    rounded box fitted to its rest mesh) swings forward just enough to clear the arms."""
+
+    def __init__(self, rig: Rig, parts):
+        from .poses import _qrot_many
+        self.rig = rig; self._rot = _qrot_many
+        flap = next(p for p in parts if p.name == "ScarfFlap")
+        V = np.asarray(flap.verts)
+        self.c = V.mean(0)
+        u, s_, vt = np.linalg.svd(V - self.c, full_matrices=False)
+        self.axes = vt                                   # rows: principal axes
+        loc = (V - self.c) @ vt.T
+        self.half = np.abs(loc).max(0)
+        self.arms = {s: Skin(rig, [next(p for p in parts if p.name == f"Arm_{s}")], stride=6) for s in ("L", "R")}
+
+    def depth(self, pose):
+        Qw, Hw = self.rig.fk(pose)
+        b = "scarfFlap_1"
+        worst = 0.0
+        for sk in self.arms.values():
+            P = sk.deform(pose)
+            q = self._rot(np.array([Qw[b][0], -Qw[b][1], -Qw[b][2], -Qw[b][3]]), P - Hw[b]) + self.rig.head[b]
+            loc = (q - self.c) @ self.axes.T
+            r = 0.006
+            d = np.abs(loc) - (self.half - r)
+            sdf = np.linalg.norm(np.maximum(d, 0), axis=1) + np.minimum(d.max(1), 0) - r
+            worst = max(worst, float(np.maximum(-sdf, 0).max()))
+        return worst
+
+    def swing_needed(self, pose, tol=0.002):
+        if self.depth(pose) <= tol:
+            return 0.0
+        lo, hi = 0.0, 85.0
+        for _ in range(10):
+            mid = 0.5 * (lo + hi)
+            q = pose.copy(); q.add("scarfFlap_1", x=-mid)
+            if self.depth(q) <= tol:
+                hi = mid
+            else:
+                lo = mid
+        return hi
+
+
+def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin | None, flap: "FlapGuard | None" = None):
+    """Ground the body and keep the tail off the floor for a whole clip, smoothing both
+    corrections over time (per-frame solutions alone pop when the support point switches)."""
+    loop = clip.loop
+    if clip.grounded and ground_skin is not None:
+        dz = []
+        for p in poses:
+            base = p.loc.get("root", np.zeros(3))[2]
+            ground(ground_skin, p)
+            dz.append(p.loc["root"][2] - base)
+            p.loc["root"][2] = base
+        dz = _smooth(dz, 1.5, loop)
+        for p, d in zip(poses, dz):
+            loc = p.loc.get("root", np.zeros(3)).copy(); loc[2] += d; p.loc["root"] = loc
+    for p in poses:   # hops / bounces ride on top of the grounded pose
+        if getattr(p, "hop", 0.0):
+            loc = p.loc.get("root", np.zeros(3)).copy(); loc[2] += p.hop; p.loc["root"] = loc
+    if tail_skin is not None:
+        lift = _smooth([tail_lift_needed(tail_skin, p) for p in poses], 2.0, loop, envelope=True)
+        for p, a in zip(poses, lift):
+            if a > 1e-3:
+                p.add("tail_1", x=float(a))
+    if flap is not None:   # the flap drapes over the arm instead of the arm cutting through it
+        sw = _smooth([flap.swing_needed(p) for p in poses], 2.0, loop, envelope=True)
+        for p, a in zip(poses, sw):
+            if a > 1e-3:
+                p.add("scarfFlap_1", x=-float(a) * 0.75)
+                p.add("scarfFlap_2", x=-float(a) * 0.25)
+    return poses
 
 
 def finalize(clip: Clip, pose: Pose, ground_skin: Skin | None, tail_skin: Skin | None):
-    if clip.grounded and ground_skin is not None:
-        ground(ground_skin, pose)
-    if tail_skin is not None:
-        lift_tail(tail_skin, pose)
-    return pose
+    """Single-pose variant (QA tools)."""
+    return finalize_series(clip, [pose], ground_skin, tail_skin)[0]
 
 
-def to_keys(clip: Clip, skin: Skin, tail_skin: Skin | None = None):
+def to_keys(clip: Clip, skin: Skin, tail_skin: Skin | None = None, flap: "FlapGuard | None" = None):
     frames = int(round(clip.duration * FPS))
+    fs = list(range(0, frames, STEP)) + [frames]
+    poses = finalize_series(clip, [clip.pose_at(f / FPS) for f in fs], skin, tail_skin, flap)
     out = []
-    for f in list(range(0, frames, STEP)) + [frames]:
-        p = finalize(clip, clip.pose_at(f / FPS), skin, tail_skin)
+    for f, p in zip(fs, poses):
         vis = vis_of(p)
         spec = {}
         for b, q in p.rot.items():
@@ -217,14 +399,18 @@ def breathe(t, p, rate=0.25, amt=1.0):
     p.add("head", x=0.8 * amt * math.sin(ph - 0.6))
 
 
-def tail_sway(t, p, rate=0.25, amp=7.0, lag=0.55):
+def tail_sway(t, p, rate=0.25, amp=13.0, lag=0.6):
+    """Slow travelling wave: the tail swings through the centre to both sides."""
     for i in range(1, 7):
-        p.add(f"tail_{i}", z=amp * (0.5 + 0.12 * i) * math.sin(2 * math.pi * rate * t - lag * i))
+        ph = 2 * math.pi * rate * t - lag * i
+        p.add(f"tail_{i}", z=amp * (0.55 + 0.1 * i) * math.sin(ph), x=2.5 * math.sin(2 * ph))
 
 
-def tail_wag(t, p, rate=2.2, amp=16.0):
-    for i in range(2, 7):
-        p.add(f"tail_{i}", z=amp * (0.45 + 0.1 * i) * math.sin(2 * math.pi * rate * t - 0.5 * i))
+def tail_wag(t, p, rate=2.2, amp=26.0):
+    """Fast happy wag with a whip-like lag toward the tip."""
+    for i in range(1, 7):
+        k = 0.35 if i == 1 else 0.45 + 0.1 * i
+        p.add(f"tail_{i}", z=amp * k * math.sin(2 * math.pi * rate * t - 0.55 * i))
 
 
 # ------------------------------------------------------------------ clip set
@@ -262,44 +448,44 @@ def make_clips(rig: Rig):
     w1 = L.wave_up(L.paw_chest(stand.copy(), "R"), "L")
     w1.add("head", y=-7, z=4).add("chest", y=-3).expression(mouth="open")
     def wave_ov(t, p):
-        env = smoother((t - 0.35) / 0.25) * (1 - smoother((t - 2.05) / 0.3))
-        sw = math.sin(2 * math.pi * 2.2 * (t - 0.35))
+        env = smoother((t - 0.45) / 0.3) * (1 - smoother((t - 2.15) / 0.3))
+        sw = math.sin(2 * math.pi * 2.0 * (t - 0.45))
         p.add("forearm_L", y=-14 * env * sw)
-        p.add("paw_L", y=-18 * env * math.sin(2 * math.pi * 2.2 * (t - 0.35) - 0.6))
-        p.loc["hips"] = np.array([0, 0, 0.012 * env * abs(math.sin(math.pi * 2.2 * (t - 0.35)))])
+        p.add("paw_L", y=-18 * env * math.sin(2 * math.pi * 2.0 * (t - 0.45) - 0.6))
+        p.hop = 0.012 * env * abs(math.sin(math.pi * 2.0 * (t - 0.45)))
         breathe(t, p, rate=0.5, amt=0.5)
-        tail_wag(t, p, rate=1.6, amp=10 * env)
-    clips.append(Clip("Wave", 2.7, [(0, w0), (0.35, w1), (2.1, w1), (2.7, w0)], wave_ov,
+        tail_wag(t, p, rate=1.6, amp=18 * env)
+    clips.append(Clip("Wave", 2.9, [(0, w0), (0.5, w1), (2.2, w1), (2.9, w0)], wave_ov,
                       meta=dict(priority=2, lookAt=0.4, refTime=0.95)))
 
     # Happy (ref 1): clasp, ^^, sway, tiptoe bounce
     h1 = L.clasp(stand.copy()).expression(eyes="happy")
     h1.add("head", y=8, x=-3)
     def happy_ov(t, p):
-        env = smoother(t / 0.3) * (1 - smoother((t - 1.9) / 0.3))
-        p.add("head", y=-10 * env * math.sin(2 * math.pi * 0.9 * (t - 0.3)))
-        p.add("chest", y=-3 * env * math.sin(2 * math.pi * 0.9 * (t - 0.3)))
-        p.loc["hips"] = np.array([0, 0, 0.014 * env * abs(math.sin(2 * math.pi * 0.9 * (t - 0.3)))])
-        tail_wag(t, p, rate=2.0, amp=14 * env)
+        env = smoother(t / 0.45) * (1 - smoother((t - 1.95) / 0.45))
+        p.add("head", y=-6 * env * math.sin(2 * math.pi * 0.9 * (t - 0.45)))
+        p.add("chest", y=-3 * env * math.sin(2 * math.pi * 0.9 * (t - 0.45)))
+        p.hop = 0.016 * env * abs(math.sin(2 * math.pi * 0.9 * (t - 0.45)))
+        tail_wag(t, p, rate=2.0, amp=24 * env)
         breathe(t, p, rate=0.5, amt=0.4)
-    clips.append(Clip("Happy", 2.2, [(0, stand), (0.3, h1), (1.9, h1), (2.2, stand)], happy_ov,
+    clips.append(Clip("Happy", 2.4, [(0, stand), (0.45, h1), (1.95, h1), (2.4, stand)], happy_ov,
                       meta=dict(priority=2, lookAt=0.6, refTime=1.0)))
 
     # Heart (ref 7)
     hh = L.heart(stand.copy()).expression(eyes="happy")
     hh.add("spine", x=4).add("head", y=-8, x=4)
     def heart_ov(t, p):
-        env = smoother((t - 0.3) / 0.3) * (1 - smoother((t - 2.2) / 0.3))
+        env = smoother((t - 0.3) / 0.35) * (1 - smoother((t - 2.2) / 0.4))
         p.add("chest", y=2.5 * env * math.sin(2 * math.pi * 1.2 * t))
-        tail_wag(t, p, rate=1.8, amp=12 * env)
+        tail_wag(t, p, rate=1.8, amp=20 * env)
         breathe(t, p, rate=0.5, amt=0.4)
-    clips.append(Clip("Heart", 2.6, [(0, stand), (0.35, hh), (2.2, hh), (2.6, stand)], heart_ov,
+    clips.append(Clip("Heart", 2.8, [(0, stand), (0.5, hh), (2.25, hh), (2.8, stand)], heart_ov,
                       meta=dict(priority=2, lookAt=0.5, refTime=1.2)))
 
     # Present (ref 3): right paw (viewer's left) palm-up toward the logo
     pr = L.present(L.paw_chest(stand.copy(), "L"), "R")
     pr.add("chest", z=-6).add("head", z=-12, y=-6, x=-2)
-    clips.append(Clip("Present", 2.5, [(0, stand), (0.4, pr), (2.0, pr), (2.5, stand)],
+    clips.append(Clip("Present", 2.6, [(0, stand), (0.5, pr), (2.05, pr), (2.6, stand)],
                       lambda t, p: (breathe(t, p, 0.5, 0.5), tail_sway(t, p, 0.5)),
                       meta=dict(priority=2, lookAt=0.3, refTime=1.2, lookAtLogo=True)))
 
@@ -313,21 +499,22 @@ def make_clips(rig: Rig):
         env = smoother((t - 0.35) / 0.3) * (1 - smoother((t - 1.9) / 0.35))
         p.add("forearm_R", y=4 * env * math.sin(2 * math.pi * 1.5 * t))
         breathe(t, p, 0.5, 0.5)
-        tail_wag(t, p, rate=1.2, amp=8 * env)
-    clips.append(Clip("Reach", 2.5, [(0, stand), (0.45, rc), (1.9, rc), (2.5, stand)], reach_ov,
+        tail_wag(t, p, rate=1.2, amp=14 * env)
+    clips.append(Clip("Reach", 2.6, [(0, stand), (0.5, rc), (1.95, rc), (2.6, stand)], reach_ov,
                       meta=dict(priority=2, lookAt=0.3, refTime=1.2, lookAtLogo=True)))
 
     # Shrug (ref 6)
     sh = L.shrug(stand.copy()).expression(brows="both")
     sh.add("head", y=9, x=-3).add("neck", y=3)
-    clips.append(Clip("Shrug", 2.3, [(0, stand), (0.35, sh), (1.8, sh), (2.3, stand)],
+    clips.append(Clip("Shrug", 2.4, [(0, stand), (0.45, sh), (1.85, sh), (2.4, stand)],
                       lambda t, p: (breathe(t, p, 0.5, 0.5), tail_sway(t, p, 0.5)),
                       meta=dict(priority=2, lookAt=0.6, refTime=1.0)))
 
     # Sitting family (ref 4 / ref 8)
     think = L.sit()
     L.paw_chest(think, "L", low=True)
-    paw_to(rig, think, "R", (-0.058, -0.198, 0.362), aim=(0.40, -0.30, 1.0), pole=(-1.0, 0.4, -0.8))
+    L.arm(think, "R", (-0.075, -0.232, 0.350), aim=(0.35, -0.35, 1.0), head_margin=-0.004)
+    fingers(think, "R", 85, 60)
     think.add("neck", y=-4).add("head", y=-11, z=-8, x=3).expression(brows="left")
     def think_ov(t, p):
         ph = 2 * math.pi * t / 4.0
@@ -339,7 +526,8 @@ def make_clips(rig: Rig):
 
     doze = L.sit(lean=4)
     L.paw_chest(doze, "L", low=True)
-    paw_to(rig, doze, "R", (-0.075, -0.192, 0.362), aim=(0.30, -0.25, 1.0), pole=(-1.0, 0.4, -0.8))
+    L.arm(doze, "R", (-0.088, -0.232, 0.346), aim=(0.30, -0.30, 1.0), head_margin=-0.004)
+    fingers(doze, "R", 85, 60)
     doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5).expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):
@@ -360,44 +548,48 @@ def make_clips(rig: Rig):
     # Jump (airborne: not grounded; hand-set root heights)
     j_sq = squat.copy()
     for s, sx in (("L", 1), ("R", -1)):
-        paw_to(rig, j_sq, s, (sx * 0.16, -0.08, 0.25), aim=(sx * 0.3, 0.3, -1.0), pole=(sx, 0.3, -0.5))
+        L.arm(j_sq, s, (sx * 0.215, -0.060, 0.190), aim=(sx * 0.3, 0.1, -1.0))
     j_up = stand.copy()
     for s, sx in (("L", 1), ("R", -1)):
-        paw_to(rig, j_up, s, (sx * 0.19, -0.11, 0.52), aim=(sx * 0.4, -0.2, 1.0), pole=(sx, 0.4, -0.5))
+        L.arm(j_up, s, (sx * 0.275, -0.100, 0.460), aim=(sx * 0.4, -0.2, 1.0))
         j_up.set(f"thigh_{s}", x=-25); j_up.set(f"shin_{s}", x=35); j_up.set(f"foot_{s}", x=10)
     j_up.expression(eyes="happy", mouth="open").add("head", x=-6)
     j_up.set("ear_L", x=-18, mirror=False); j_up.set("ear_R", x=-18)
     tail_curve(j_up, x=18, start=2, falloff=0.9)
     j_land = squat.copy(); j_land.expression(eyes="happy")
+    T_SQ, T_TAKE, T_LAND, T_SET = 0.32, 0.36, 0.90, 1.12
     def jump_root(t):
-        # squat (0-0.25) -> airborne peak 0.14 at 0.5 -> land 0.75 -> settle
-        if t < 0.25:
-            return -0.03 * smoother(t / 0.25)
-        if t < 0.75:
-            u = (t - 0.25) / 0.5
+        # squat -> take-off -> airborne arc (peak ~0.14) -> landing squash -> settle
+        if t < T_SQ:
+            return -0.03 * smoother(t / T_SQ)
+        if t < T_LAND:
+            u = (t - T_SQ) / (T_LAND - T_SQ)
             return -0.03 + (0.17 * 4 * u * (1 - u)) + 0.03 * u
-        if t < 0.95:
-            return -0.028 * math.sin(math.pi * (t - 0.75) / 0.2)
+        if t < T_SET:
+            return -0.028 * math.sin(math.pi * (t - T_LAND) / (T_SET - T_LAND))
         return 0.0
     def jump_ov(t, p):
         p.loc["root"] = np.array([0, 0, jump_root(t)])
         sq = 0.0
-        if 0.75 <= t < 1.0:
-            sq = math.sin(math.pi * (t - 0.75) / 0.25)
-        if t < 0.25:
-            sq = 0.6 * smoother(t / 0.25)
-        p.scale["root"] = (1 + 0.06 * sq, 1 + 0.06 * sq, 1 - 0.07 * sq)
-    clips.append(Clip("Jump", 1.35, [(0, stand), (0.25, j_sq), (0.5, j_up), (0.78, j_land), (1.35, stand)],
-                      jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3)))
+        if T_LAND <= t < T_SET + 0.08:
+            sq = math.sin(math.pi * min(1.0, (t - T_LAND) / (T_SET + 0.08 - T_LAND)))
+        if t < T_SQ:
+            sq = 0.6 * smoother(t / T_SQ)
+        elif t < T_TAKE + 0.08:
+            sq = 0.6 * (1 - smoother((t - T_SQ) / (T_TAKE + 0.08 - T_SQ)))
+        p.scale["root"] = (1 + 0.06 * sq, 1 - 0.07 * sq, 1 + 0.06 * sq)   # root local Y = up
+        tail_wag(t, p, rate=1.5, amp=10)
+    clips.append(Clip("Jump", 1.7, [(0, stand), (T_SQ, j_sq), (0.70, j_up), (T_LAND + 0.04, j_land), (1.7, stand)],
+                      jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
 
     # Pet (loop): leaning into the hand, eyes ^^, ears back, tail wagging
     pet = L.clasp(stand.copy()).expression(eyes="happy")
     pet.set("ear_L", x=-22, y=8); pet.set("ear_R", x=-22, y=-8)
     def pet_ov(t, p):
         ph = 2 * math.pi * t / 1.6
-        p.add("neck", y=4 * math.sin(ph)); p.add("head", y=10 * math.sin(ph), x=3 + 2 * math.sin(2 * ph), z=4 * math.sin(ph))
+        p.add("neck", y=3 * math.sin(ph)); p.add("head", y=6 * math.sin(ph), x=2 + 1.5 * math.sin(2 * ph), z=3 * math.sin(ph))
         p.add("chest", y=2 * math.sin(ph))
-        tail_wag(t, p, rate=2.5, amp=18)
+        tail_wag(t, p, rate=2.5, amp=28)
         breathe(t, p, rate=1.25, amt=0.6)
     clips.append(Clip("Pet", 1.6, [(0, pet)], pet_ov, loop=True, meta=dict(priority=2, lookAt=0.0)))
 
@@ -406,12 +598,81 @@ def make_clips(rig: Rig):
     lb.add("spine", z=14).add("chest", z=16).add("neck", z=14).add("head", z=26, x=4, y=6)
     def lb_ov(t, p):
         env = smoother((t - 0.3) / 0.3) * (1 - smoother((t - 1.9) / 0.4))
-        for i in range(2, 7):
-            p.add(f"tail_{i}", z=-20 * env * (0.4 + 0.12 * i) * math.sin(2 * math.pi * 1.4 * t - 0.6 * i),
-                  x=6 * env)
+        for i in range(1, 7):
+            p.add(f"tail_{i}", z=-34 * env * (0.3 + 0.12 * i) * math.sin(2 * math.pi * 1.3 * t - 0.6 * i),
+                  x=8 * env)
         breathe(t, p, 0.5, 0.5)
     clips.append(Clip("LookBack", 2.4, [(0, stand), (0.45, lb), (1.9, lb), (2.4, stand)], lb_ov,
                       meta=dict(priority=2, lookAt=0.0)))
+
+    # ---- Enter: hop in from the viewer's right (fox's left, +X), turn to the front, wave
+    wv = L.wave_up(L.paw_chest(stand.copy(), "R"), "L").expression(mouth="open")
+    HOPS, T_IN, X0 = 3, 1.25, 0.95
+
+    def hopping(t, p, x_from, x_to, t0, t1, yaw, ease="out"):
+        """Root travel with parabolic hops between t0 and t1; body faces the travel direction.
+        ease='out' decelerates into the arrival, 'in' accelerates away; hops ramp in/out."""
+        if t0 <= t <= t1:
+            u = (t - t0) / (t1 - t0)
+            k = (u * HOPS) % 1.0
+            ramp = min(1.0, u / 0.12, (1 - u) / 0.12)
+            air = 4 * k * (1 - k) * (0.35 + 0.65 * ramp)
+            e = 1 - (1 - u) ** 2 if ease == "out" else u * u
+            x = x_from + (x_to - x_from) * e
+            p.loc["root"] = np.array([x, 0.0, 0.0])
+            p.hop = 0.075 * air
+            p.add("root", z=yaw)
+            for s in ("L", "R"):
+                p.add(f"thigh_{s}", x=-22 * air); p.add(f"shin_{s}", x=26 * air)
+                p.add(f"upperArm_{s}", y=(-18 if s == "L" else 18) * air)
+            p.add("spine", x=6 * (1 - air) - 4 * air)
+            ears = -16 * air
+            p.add("ear_L", x=ears); p.add("ear_R", x=ears)
+            for i in range(2, 7):   # the tail trails behind the travel direction
+                p.add(f"tail_{i}", x=10 * air, z=-np.sign(x_to - x_from) * 6 * (0.5 + 0.1 * i))
+            return True
+        return False
+
+    def enter_ov(t, p):
+        if not hopping(t, p, X0, 0.0, 0.0, T_IN, -38.0):
+            turn = 1 - smoother((t - T_IN) / 0.3)
+            p.add("root", z=-38.0 * turn)
+            env = smoother((t - 1.75) / 0.25) * (1 - smoother((t - 2.4) / 0.25))
+            p.add("forearm_L", y=-14 * env * math.sin(2 * math.pi * 2.2 * (t - 1.75)))
+            tail_wag(t, p, rate=2.0, amp=22 * env)
+        breathe(t, p, 0.5, 0.4)
+    clips.append(Clip("Enter", 3.0, [(0, stand), (T_IN + 0.1, stand), (1.8, wv), (2.4, wv), (3.0, stand)],
+                      enter_ov, meta=dict(priority=4, interruptible=False, lookAt=0.3)))
+
+    # ---- Exit: wave goodbye, turn toward the viewer's right, hop away out of frame
+    def exit_ov(t, p):
+        env = smoother((t - 0.45) / 0.25) * (1 - smoother((t - 1.1) / 0.2))
+        p.add("forearm_L", y=-14 * env * math.sin(2 * math.pi * 2.2 * (t - 0.45)))
+        if not hopping(t, p, 0.0, X0, 1.55, 2.9, 40.0, ease="in"):
+            p.add("root", z=40.0 * smoother((t - 1.2) / 0.35))
+        tail_wag(t, p, rate=2.0, amp=16 * env)
+        breathe(t, p, 0.5, 0.4)
+    clips.append(Clip("Exit", 2.9, [(0, stand), (0.45, wv), (1.1, wv), (1.55, stand), (2.9, stand)],
+                      exit_ov, meta=dict(priority=4, interruptible=False, lookAt=0.0)))
+
+    # ---- Type (loop): paws tap a floating keyboard (spec.keyboard) at chest height
+    def typing_pose(xl, zl, xr, zr):
+        p = stand.copy()
+        p.add("head", x=12).add("neck", x=4)
+        p.set("ear_L", x=6, y=-4); p.set("ear_R", x=6, y=4)
+        L.arm(p, "L", (xl, -0.236, zl), aim=(-0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
+        L.arm(p, "R", (xr, -0.236, zr), aim=(0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
+        return both_fingers(p, 40, 26)
+    DOWN, UP = 0.272, 0.300
+    tp = [typing_pose(0.072, DOWN, -0.072, UP), typing_pose(0.080, UP, -0.060, DOWN),
+          typing_pose(0.092, DOWN, -0.085, UP), typing_pose(0.060, UP, -0.078, DOWN)]
+    keys = [(i * 0.15, tp[i % 4]) for i in range(8)] + [(1.2, tp[0])]
+    def type_ov(t, p):
+        breathe(t, p, rate=1.25, amt=0.4)
+        p.add("head", y=2.0 * math.sin(2 * math.pi * t / 1.2), x=1.2 * math.sin(2 * math.pi * 5 * t / 1.2 * 0.8))
+        tail_sway(t, p, rate=1 / 1.2, amp=9)
+    clips.append(Clip("Type", 1.2, keys, type_ov, loop=True,
+                      meta=dict(priority=2, lookAt=0.0, blink=1.0)))
 
     return clips
 
@@ -420,16 +681,19 @@ def build_clips(bpy, arm, parts=None, bone_table=None):
     rig = Rig(bone_table)
     skin = Skin(rig, parts, names={"Body", "Leg_L", "Leg_R"}, stride=3) if parts else None
     tail = Skin(rig, parts, names={"Tail"}, stride=2) if parts else None
+    flap = FlapGuard(rig, parts) if parts else None
     meta = {}
     for c in make_clips(rig):
         if skin is None:
             c.grounded = False
-        keys = to_keys(c, skin, tail)
+        keys = to_keys(c, skin, tail, flap)
         make_action(bpy, arm, c.name, keys, loop=c.loop)
         m = dict(loop=c.loop, duration=round(c.duration, 4), priority=1, interruptible=True,
                  lookAt=1.0, blink=1.0, springs=1.0)
         m.update(c.meta)
         meta[c.name] = m
+    if _CACHE is not None:
+        _CACHE.save()
     missing = set(C.CLIP_NAMES) - set(meta)
     assert not missing, missing
     return meta

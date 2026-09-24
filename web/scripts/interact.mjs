@@ -21,7 +21,7 @@ let base = opt('--url', null);
 let server = null;
 if (!base) {
   const port = 5300 + Math.floor(Math.random() * 400);
-  server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: webDir, stdio: 'ignore', env: { ...process.env, FOX_NO_HMR: '1' } });
+  server = spawn(process.execPath, [path.join(webDir, 'node_modules/vite/bin/vite.js'), '--port', String(port), '--strictPort'], { cwd: webDir, stdio: 'ignore', env: { ...process.env, FOX_NO_HMR: '1' } });
   base = `http://localhost:${port}/`;
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(base); if (r.ok) break; } catch {}

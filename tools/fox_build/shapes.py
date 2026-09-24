@@ -63,20 +63,25 @@ def _ear_half_thickness(y):
 
 
 def _ear_shape(q, inner=False):
-    """Pillowy rounded-triangle slab in ear-local coords q (x across, y along, z = front)."""
+    """Fox auricle in ear-local coords q (x across, y along base->tip, z = front).
+
+    A flattened round cone (convex back) cut open at the front, with a deep scoop carved into
+    the front face (inner=True returns that scoop volume, which head_sdf subtracts and
+    parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
+    hw = P["ear_base_width"] / 2
+    fz = 0.62                                     # cone flattening front-back
+    r_tip = 0.030
     if inner:
-        # recess volume: inset outline, from (front face - depth) forward
-        d2 = _ear_outline(q, inset=0.036)
-        d2 = S.smax(d2, 0.03 - q[:, 1], 0.02)          # recess starts a bit above the base
-        h = _ear_half_thickness(q[:, 1])
-        depth = 0.020 * (1 - 0.5 * np.clip(q[:, 1] / EAR_LEN, 0, 1))
-        dz = (h - depth) - q[:, 2]
-        return S.smax(d2, dz, 0.010)                   # rounded rim edge (no hard crease)
-    d2 = _ear_outline(q)
-    h = _ear_half_thickness(q[:, 1])
-    rr = 0.012
-    wx = d2 + rr; wz = np.abs(q[:, 2]) - h + rr
-    return np.minimum(np.maximum(wx, wz), 0) + np.sqrt(np.maximum(wx, 0) ** 2 + np.maximum(wz, 0) ** 2) - rr
+        rim = 0.029
+        qi = q.copy()
+        qi[:, 2] = (q[:, 2] - 0.032) / fz
+        cav = S.round_cone(qi, (0, 0.030, 0), (0, EAR_LEN - 0.050, 0), hw - rim, r_tip * 0.5) * fz
+        return cav
+    qo = q.copy()
+    qo[:, 2] = q[:, 2] / fz
+    cone = S.round_cone(qo, (0, EAR_Y0, 0), (0, EAR_LEN - r_tip * 0.6, 0), hw, r_tip) * fz
+    front = q[:, 2] - 0.014                       # open the front of the cone
+    return S.smax(cone, front, 0.020)             # rounded rim where the cut meets the cone
 
 
 def ear_local(p):
@@ -148,22 +153,29 @@ def _arm_pts(side="L"):
 def arm_sdf(p, side="L"):
     sh, el, wr, tip = _arm_pts(side)
     ar = P["arm_radius"]; pr = P["paw_radius"]
-    d = S.round_cone(p, sh, el, ar * 0.98, ar * 0.93)
-    d = S.smin(d, S.round_cone(p, el, wr, ar * 0.93, ar * 0.97), 0.02)
+    # one smooth tapered tube shoulder -> wrist (no elbow lump; the bend comes from skinning)
+    d = S.round_cone(p, sh, wr, ar, ar * 0.84)
     ax = (tip - wr) / np.linalg.norm(tip - wr)
-    pc = wr + ax * 0.034
+    pc = wr + ax * 0.030
     # mitten paw: ellipsoid in a local frame (x lateral, y along axis, z front/back)
     o, R = S.frame(pc, np.cross(ax, [0, -1, 0]), ax)
     ql = S.to_local(p, o, R)
-    paw = S.ellipsoid(ql, (0, 0, 0), (pr * 1.0, pr * 1.08, pr * 0.86))
+    paw = S.ellipsoid(ql, (0, 0, 0), (pr * 1.0, pr * 1.0, pr * 0.84))     # palm, barely wider than the wrist
     d = S.smin(d, paw, 0.03)
     d = S.smin(d, S.sphere(p, sh, ar * 1.02), 0.02)  # ball root at the shoulder pivot
-    # two toe grooves across the tip (front half)
-    for gx in (-0.017, 0.017):
-        a = o + R @ np.array([gx, pr * 0.35, pr * 0.2])
-        b = o + R @ np.array([gx, pr * 1.25, pr * 0.2])
-        g = S.capsule(p, a, b, 0.0042)
-        d = S.ssub(d, g, 0.006)
+    d = S.smin(d, paw_fingers_sdf(p, side), 0.006)   # finger nubs + thumb (bones: fingers_*, thumb_*)
+    return d
+
+
+def paw_fingers_sdf(p, side="L"):
+    """Three short finger nubs over the paw tip + a thumb on the medial side (rest pose)."""
+    f = C.paw_frame(side)
+    d = np.full(len(p), np.inf)
+    for off in f["finger_offsets"]:
+        a = f["knuckle"] + f["x"] * off - f["y"] * 0.004
+        b = f["finger_tip"] + f["x"] * off * 1.08
+        d = np.minimum(d, S.capsule(p, a, b, f["finger_r"]))
+    d = np.minimum(d, S.capsule(p, f["thumb_base"], f["thumb_tip"], f["thumb_r"]))
     return d
 
 

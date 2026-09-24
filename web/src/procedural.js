@@ -1,18 +1,44 @@
-// Procedural layer applied after mixer.update(): look-at, blink, ear twitch, tail and scarf springs.
+// Procedural layer applied after mixer.update(): look-at, blink, talking mouth, ear twitch,
+// tail chain physics (with drag / flick), scarf springs, typing paws and keystroke nods.
+//
 // All offsets are applied as world-space rotations about each bone's pivot, so bone roll in the
-// rig does not matter, and bones are restored to their rest pose before the mixer runs, so
-// nothing accumulates even for bones a clip does not key.
+// rig does not matter. The mixer only writes a bone when its animated value CHANGES, so before
+// adding offsets we snapshot the animated values and put exactly those back before the next
+// mixer update (never the rest pose: that would erase poses a clip is holding still). Nothing
+// here ever accumulates from frame to frame.
 import * as THREE from 'three';
 
 const DEG = Math.PI / 180;
 const YAW_MAX = 50 * DEG;
 const PITCH_MAX = 25 * DEG;
 const SUBSTEP = 1 / 120;
-const TAIL = ['tail_2', 'tail_3', 'tail_4', 'tail_5', 'tail_6'];
-const TAIL_SHARE = [0.12, 0.17, 0.21, 0.24, 0.26];
+const MAX_STEPS = 12; // at most 0.1 s of physics per frame
+
+// ---- tail chain -------------------------------------------------------------------------------
+// tail_1 (base, stiff) .. tail_6 (tip, compliant). Each joint is an angular spring that pulls
+// its tip back to where the clip puts it, RELATIVE to the parent's simulated tip, so a disturbance
+// at the base travels down the chain and whips the tip. The only drivers are the inertial
+// (fictitious) forces of the hips frame, i.e. its linear and angular acceleration: the clip's own
+// tail animation is reproduced exactly when the body is still, and every hop, turn or landing
+// adds follow-through on top. Gravity-free.
+const TAIL = ['tail_1', 'tail_2', 'tail_3', 'tail_4', 'tail_5', 'tail_6'];
+const TAIL_OMEGA = [34, 26, 20, 15.5, 12, 9.5]; // rad/s natural frequency per joint
+const TAIL_ZETA = [0.85, 0.62, 0.46, 0.36, 0.3, 0.26]; // damping ratio per joint
+const TAIL_MAX_BEND = [12, 18, 26, 34, 42, 50].map((d) => Math.sin(d * DEG)); // per joint, x link length
+const TAIL_INERTIA = 1.15; // gain on the inertial drive
+const DRAG_SHARE = [0.04, 0.1, 0.16, 0.2, 0.23, 0.27]; // bend distribution while the tail is dragged
+const DRAG_MAX = 60 * DEG;
+const DRAG_GAIN = 1.6;
+const FLICK = [0, 0.12, 0.3, 0.55, 0.85, 1.15]; // velocity kick per tip (x 1.9 units/s)
+const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle travelling wave
+
+// Typing fallback (no Type clip): lift the forearms towards the keyboard and tap.
+const ARM_LIFT = { upperArm: -16 * DEG, forearm: -34 * DEG, paw: 14 * DEG };
+const TAP = { forearm: 16 * DEG, paw: -10 * DEG };
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
+const _v3 = new THREE.Vector3();
 const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _qc = new THREE.Quaternion(); // character (root) world rotation, valid for one update()
@@ -22,6 +48,14 @@ const _axis = new THREE.Vector3();
 const _rp = new THREE.Quaternion();
 const _rpi = new THREE.Quaternion();
 const _dq = new THREE.Quaternion();
+const _m = new THREE.Matrix4();
+const _s = new THREE.Vector3();
+const Y = new THREE.Vector3(0, 1, 0);
+
+const smoothstep = (a, b, x) => {
+  const t = THREE.MathUtils.clamp((x - a) / (b - a), 0, 1);
+  return t * t * (3 - 2 * t);
+};
 
 /** Exact critically damped step of x towards target (state {x, v}). */
 function critDamp(s, target, omega, dt) {
@@ -68,15 +102,65 @@ function rotateWorld(bone, qWorld) {
   bone.updateMatrixWorld(true);
 }
 
+/** Position / rotation of an object in the fox's model space, with finite-difference motion. */
+class Kinematics {
+  constructor() {
+    this.valid = false;
+    this.pos = new THREE.Vector3();
+    this.q = new THREE.Quaternion();
+    this.vel = new THREE.Vector3();
+    this.omega = new THREE.Vector3();
+    this.acc = new THREE.Vector3();
+    this.alpha = new THREE.Vector3();
+    this.frames = 0;
+    this._p = new THREE.Vector3();
+    this._w = new THREE.Vector3();
+    this._vq = new THREE.Quaternion();
+  }
+  reset() { this.valid = false; }
+  /** Returns false (and zero motion) on the first frame and after a teleport. */
+  update(obj, modelInv, dt) {
+    _m.multiplyMatrices(modelInv, obj.matrixWorld).decompose(this._p, this._vq, _s);
+    if (!this.valid || dt < 1e-5 || this._p.distanceTo(this.pos) > 0.3) {
+      this.valid = true;
+      this.frames = 0;
+      this.pos.copy(this._p);
+      this.q.copy(this._vq);
+      this.vel.set(0, 0, 0);
+      this.omega.set(0, 0, 0);
+      this.acc.set(0, 0, 0);
+      this.alpha.set(0, 0, 0);
+      return false;
+    }
+    const vel = _v3.copy(this._p).sub(this.pos).divideScalar(dt);
+    const w = angularVelocity(this.q, this._vq, dt, this._w);
+    if (this.frames > 0) {
+      this.acc.copy(vel).sub(this.vel).divideScalar(dt).clampLength(0, 25);
+      this.alpha.copy(w).sub(this.omega).divideScalar(dt).clampLength(0, 120);
+    }
+    this.frames++;
+    this.vel.copy(vel);
+    this.omega.copy(w);
+    this.pos.copy(this._p);
+    this.q.copy(this._vq);
+    return true;
+  }
+}
+
 export class Procedural {
   constructor(fox, { rng = Math.random } = {}) {
+    this.fox = fox;
     this.b = fox.bones;
     this.rng = rng;
     this.enabled = true; // false in debug poses
+    this.paused = false; // true while the fox is away (hidden)
     this.randomness = true; // blink / ear twitch timers
 
     // Everything we touch, with its rest transform (captured before any animation ran).
-    const names = ['neck', 'head', 'ear_L', 'ear_R', 'eyeOpen_L', 'eyeOpen_R', 'scarfFlap_1', 'scarfFlap_2', ...TAIL];
+    const names = [
+      'neck', 'head', 'ear_L', 'ear_R', 'eyeOpen_L', 'eyeOpen_R', 'mouthOpen', 'mouthSmile', 'scarfFlap_1', 'scarfFlap_2',
+      'upperArm_L', 'upperArm_R', 'forearm_L', 'forearm_R', 'paw_L', 'paw_R', ...TAIL,
+    ];
     this.rest = names.filter((n) => this.b[n]).map((n) => ({
       bone: this.b[n], q: this.b[n].quaternion.clone(), s: this.b[n].scale.clone(), p: this.b[n].position.clone(),
     }));
@@ -95,39 +179,71 @@ export class Procedural {
 
     this.target = null; // Vector3 or null
     this.look = { yaw: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, w: { x: 0, v: 0 } };
+    this.lookActive = false;
 
     this.blinkIn = 2 + rng() * 3;
     this.blinkT = -1;
     this.blinkDouble = false;
 
+    // Talking (speech bubble): mouthOpen / mouthSmile toggled in a syllable rhythm.
+    this.talk = false;
+    this.talkEnv = { x: 0, v: 0 };
+    this.syl = { t: 0, dur: 0.14, open: 0.55 };
+    this.talkOpen = 0; // current mouth-open amount (for tests)
+
     this.ears = { L: [new Spring(22, 0.22), new Spring(18, 0.3)], R: [new Spring(22, 0.22), new Spring(18, 0.3)] };
     this.earIn = 3 + rng() * 5;
     this.flicks = 0; // explicit ear flicks (clicks), for tests
 
-    this.tail = { yaw: new Spring(7, 0.35), pitch: new Spring(7, 0.4) };
     this.flap = { swing: new Spring(10, 0.25), side: new Spring(9, 0.3) };
+    this.nodSpring = new Spring(24, 0.5);
+    this.taps = { L: new Spring(32, 0.45), R: new Spring(32, 0.45) };
+    this.typing = false; // typing without a Type clip: lift + tap the paws procedurally
+    this.typeArm = { x: 0, v: 0 };
+    this.nods = 0;
     this.acc = 0;
     this.time = 0;
-    this.prev = null; // previous hips/head/chest transforms for velocity estimates
+    this.prev = null; // previous head/chest transforms for velocity estimates
+
+    this.initTail();
 
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.reset(); });
   }
 
-  /** Put touched bones back to rest before the mixer writes this frame's pose. */
+  // ---- bookkeeping ------------------------------------------------------------------------
+
+  /** Snapshot the mixer's output for every bone we are about to offset. */
+  capture() {
+    for (const r of this.rest) {
+      if (!r.anim) r.anim = { q: new THREE.Quaternion(), s: new THREE.Vector3(), p: new THREE.Vector3() };
+      r.anim.q.copy(r.bone.quaternion);
+      r.anim.s.copy(r.bone.scale);
+      r.anim.p.copy(r.bone.position);
+      r.captured = true;
+    }
+  }
+
+  /** Undo last frame's offsets (back to the animated pose) before the mixer runs again. */
   restore() {
     for (const r of this.rest) {
-      r.bone.quaternion.copy(r.q);
-      r.bone.scale.copy(r.s);
-      r.bone.position.copy(r.p);
+      if (!r.captured) continue;
+      r.bone.quaternion.copy(r.anim.q);
+      r.bone.scale.copy(r.anim.s);
+      r.bone.position.copy(r.anim.p);
+      r.captured = false;
     }
   }
 
   reset() {
+    for (const r of this.rest) r.captured = false;
     this.acc = 0;
     this.prev = null;
-    for (const s of [...this.ears.L, ...this.ears.R, this.tail.yaw, this.tail.pitch, this.flap.swing, this.flap.side]) s.reset();
+    for (const s of [...this.ears.L, ...this.ears.R, this.flap.swing, this.flap.side, this.nodSpring, this.taps.L, this.taps.R]) s.reset();
     this.look.w.x = this.look.w.v = 0;
+    this.lookActive = false;
     this.blinkT = -1;
+    this.talkEnv.x = this.talkEnv.v = 0;
+    this.resetTail();
   }
 
   setTarget(v) {
@@ -142,8 +258,29 @@ export class Procedural {
     this.flicks++;
   }
 
+  /** Small head nod (one keystroke). */
+  nod(strength = 1) {
+    this.nodSpring.v += 2.4 * strength;
+    this.nods++;
+  }
+
+  /** Tap one paw down (typing fallback only). */
+  tapPaw(side) {
+    const s = this.taps[side];
+    if (s) s.v += 11;
+  }
+
   update(dt, layers) {
     if (!this.enabled) return;
+    if (this.paused) {
+      this.wasPaused = true;
+      return;
+    }
+    if (this.wasPaused) {
+      this.wasPaused = false;
+      this.reset();
+    }
+    this.capture();
     dt = Math.min(dt, 0.1);
     this.time += dt;
     const { head, root } = this.b;
@@ -152,9 +289,16 @@ export class Procedural {
     const charQ = charRoot.getWorldQuaternion(_qc);
     _up.set(0, 1, 0).applyQuaternion(charQ);
 
+    this.acc = Math.min(this.acc + dt, MAX_STEPS * SUBSTEP);
+    const steps = Math.floor(this.acc / SUBSTEP + 1e-9);
+    this.acc -= steps * SUBSTEP;
+
     this.updateLook(dt, layers.lookAt, charQ);
+    this.updateNod(steps);
     this.updateBlink(dt, layers.blink);
-    this.updateSprings(dt, layers.springs, charQ);
+    this.updateTalk(dt);
+    this.updateTypingArms(dt, steps, charQ);
+    this.updateSprings(dt, steps, layers.springs, charQ);
   }
 
   // ---- look-at ------------------------------------------------------------------------------
@@ -163,8 +307,25 @@ export class Procedural {
     const { head, neck } = this.b;
     const L = this.look;
     const active = !!this.target;
-    critDamp(L.w, active ? weight : 0, 6, dt);
     const invChar = _qi.copy(charQ).invert();
+
+    // Current animated head direction in the character frame.
+    const hf = this.axes.head.fwd;
+    head.getWorldQuaternion(_q);
+    const f = _v2.copy(hf).applyQuaternion(_q).applyQuaternion(invChar);
+    const curYaw = Math.atan2(f.x, f.z);
+    const curPitch = Math.atan2(f.y, Math.hypot(f.x, f.z));
+
+    // A new target after a pause starts from where the head already looks, never from a stale
+    // angle (that would swing the head across on the first frames).
+    if (active && !this.lookActive && L.w.x < 0.05) {
+      L.yaw.x = curYaw;
+      L.pitch.x = curPitch;
+      L.yaw.v = L.pitch.v = 0;
+    }
+    this.lookActive = active;
+
+    critDamp(L.w, active ? weight : 0, 6, dt);
     const eye = head.localToWorld(_v.copy(this.eyeLocal));
     if (active) {
       const d = _v2.copy(this.target).sub(eye).applyQuaternion(invChar);
@@ -176,12 +337,6 @@ export class Procedural {
     const w = L.w.x;
     if (w < 1e-3) return;
 
-    // Current animated head direction in the character frame.
-    const hf = this.axes.head.fwd;
-    head.getWorldQuaternion(_q);
-    const f = _v2.copy(hf).applyQuaternion(_q).applyQuaternion(invChar);
-    const curYaw = Math.atan2(f.x, f.z);
-    const curPitch = Math.atan2(f.y, Math.hypot(f.x, f.z));
     const dYaw = THREE.MathUtils.clamp(L.yaw.x - curYaw, -70 * DEG, 70 * DEG) * w;
     const dPitch = THREE.MathUtils.clamp(L.pitch.x - curPitch, -40 * DEG, 40 * DEG) * w;
 
@@ -196,6 +351,19 @@ export class Procedural {
       _q2.setFromAxisAngle(_axis, dPitch * share);
       rotateWorld(bone, _q.multiply(_q2));
     }
+  }
+
+  /** Keystroke nods: a quick dip of the head, on top of the look-at. */
+  updateNod(steps) {
+    const s = this.nodSpring;
+    for (let i = 0; i < steps; i++) s.step(SUBSTEP);
+    const head = this.b.head;
+    if (!head || Math.abs(s.x) < 1e-4) return;
+    const fwd = _v.copy(this.axes.head.fwd).applyQuaternion(head.getWorldQuaternion(_q2));
+    _axis.crossVectors(fwd, _up);
+    if (_axis.lengthSq() < 1e-6) return;
+    _axis.normalize();
+    rotateWorld(head, _q.setFromAxisAngle(_axis, -THREE.MathUtils.clamp(s.x, -0.25, 0.25)));
   }
 
   // ---- blink ----------------------------------------------------------------------------------
@@ -230,17 +398,76 @@ export class Procedural {
     }
   }
 
+  // ---- talking mouth ------------------------------------------------------------------------
+
+  /**
+   * While a speech bubble is up, alternate mouthOpen / mouthSmile (spec.expressions: hidden =
+   * uniform scale 0.001, visible = 1) in a ~7 Hz syllable rhythm with eased edges. Skipped when
+   * the clip already shows the open mouth or the sleeping eyes.
+   */
+  updateTalk(dt) {
+    const { mouthOpen: mo, mouthSmile: ms, eyeSleep_L: sleep } = this.b;
+    if (!mo || !ms) return;
+    const clipOpen = mo.scale.x > 0.5;
+    const asleep = !!sleep && sleep.scale.x > 0.5;
+    const want = this.talk && !clipOpen && !asleep && ms.scale.x > 0.5;
+    critDamp(this.talkEnv, want ? 1 : 0, want ? 18 : 26, dt);
+    const env = this.talkEnv.x;
+    if (env < 0.01 || clipOpen || asleep) {
+      this.talkOpen = 0;
+      return;
+    }
+    const y = this.syl;
+    y.t += dt;
+    while (y.t >= y.dur) {
+      y.t -= y.dur;
+      y.dur = 1 / (6 + 2.2 * this.rng()); // ~7 syllables per second
+      y.open = 0.45 + 0.25 * this.rng();
+    }
+    const u = y.t / y.dur;
+    // open for the first `open` fraction of the syllable, with eased edges (~20 ms)
+    const edge = Math.min(0.2, 0.025 / y.dur);
+    const o = env * smoothstep(0, edge, u) * (1 - smoothstep(y.open - edge, y.open, u));
+    this.talkOpen = o;
+    const H = 0.001;
+    mo.scale.setScalar(H + (1 - H) * o);
+    ms.scale.setScalar(H + (1 - H) * (1 - o));
+    mo.updateMatrixWorld(true);
+    ms.updateMatrixWorld(true);
+  }
+
+  // ---- typing fallback paws ------------------------------------------------------------------
+
+  updateTypingArms(dt, steps, charQ) {
+    const T = this.taps;
+    for (let i = 0; i < steps; i++) { T.L.step(SUBSTEP); T.R.step(SUBSTEP); }
+    critDamp(this.typeArm, this.typing ? 1 : 0, 7, dt);
+    const w = this.typeArm.x;
+    if (w < 1e-3) return;
+    const right = _v3.set(1, 0, 0).applyQuaternion(charQ);
+    for (const side of ['L', 'R']) {
+      const tap = THREE.MathUtils.clamp(T[side].x, -0.3, 1.2);
+      for (const [part, lift, tapAmt] of [['upperArm', ARM_LIFT.upperArm, 0], ['forearm', ARM_LIFT.forearm, TAP.forearm], ['paw', ARM_LIFT.paw, TAP.paw]]) {
+        const bone = this.b[`${part}_${side}`];
+        if (!bone) continue;
+        rotateWorld(bone, _q.setFromAxisAngle(right, w * (lift + tap * tapAmt)));
+      }
+    }
+  }
+
   // ---- springs (ears, tail, scarf) -------------------------------------------------------------
 
-  updateSprings(dt, weight, charQ) {
-    const { hips, chest, head } = this.b;
+  updateSprings(dt, steps, weight, charQ) {
+    const { chest, head } = this.b;
     // Drivers, all measured on the final (animated + looked-at) pose.
-    const now = {
-      hipsQ: (hips || head).getWorldQuaternion(new THREE.Quaternion()),
-      headQ: head.getWorldQuaternion(new THREE.Quaternion()),
-      hipsPos: (hips || head).getWorldPosition(new THREE.Vector3()),
-      chestPos: (chest || head).getWorldPosition(new THREE.Vector3()),
-    };
+    const now = this._now || (this._now = {
+      headQ: new THREE.Quaternion(), chestPos: new THREE.Vector3(), hipsPos: new THREE.Vector3(), hipsQ: new THREE.Quaternion(),
+    });
+    const hips = this.b.hips || head;
+    head.getWorldQuaternion(now.headQ);
+    (chest || head).getWorldPosition(now.chestPos);
+    hips.getWorldPosition(now.hipsPos);
+    hips.getWorldQuaternion(now.hipsQ);
     const hipsW = new THREE.Vector3(); // angular velocities (world)
     const headW = new THREE.Vector3();
     const vel = new THREE.Vector3(); // chest velocity, character frame
@@ -251,8 +478,14 @@ export class Procedural {
       _qi.copy(charQ).invert();
       vel.copy(now.chestPos).sub(this.prev.chestPos).divideScalar(dt).applyQuaternion(_qi);
       hipsVel.copy(now.hipsPos).sub(this.prev.hipsPos).divideScalar(dt).applyQuaternion(_qi);
+      if (vel.length() > 20) vel.set(0, 0, 0); // teleport (clip snap), not motion
+      if (hipsVel.length() > 20) hipsVel.set(0, 0, 0);
     }
-    this.prev = now;
+    if (!this.prev) this.prev = { headQ: new THREE.Quaternion(), chestPos: new THREE.Vector3(), hipsPos: new THREE.Vector3(), hipsQ: new THREE.Quaternion() };
+    this.prev.headQ.copy(now.headQ);
+    this.prev.chestPos.copy(now.chestPos);
+    this.prev.hipsPos.copy(now.hipsPos);
+    this.prev.hipsQ.copy(now.hipsQ);
     const yawRate = hipsW.dot(_up);
     const rise = hipsVel.y;
 
@@ -276,22 +509,15 @@ export class Procedural {
     }
 
     const clampRate = (x, m) => THREE.MathUtils.clamp(x, -m, m);
-    // Tail lags behind hip rotation and sideways hip motion (+x hips -> tip swings to -x).
-    this.tail.yaw.target = clampRate(-0.18 * yawRate + 0.8 * hipsVel.x, 0.5) + 0.04 * Math.sin(this.time * 1.3) * (this.randomness ? 1 : 0);
-    this.tail.pitch.target = clampRate(-0.35 * rise, 0.4); // rising body -> tail lags down
     this.flap.swing.target = THREE.MathUtils.clamp(-0.6 * vel.z + 0.8 * Math.max(0, -rise * 0.3), -0.1, 0.6);
     this.flap.side.target = clampRate(-0.5 * vel.x - 0.1 * yawRate, 0.4);
 
-    this.acc = Math.min(this.acc + dt, 0.1);
-    const springs = [...this.ears.L, ...this.ears.R, this.tail.yaw, this.tail.pitch, this.flap.swing, this.flap.side];
-    while (this.acc >= SUBSTEP) {
-      for (const s of springs) s.step(SUBSTEP);
-      this.acc -= SUBSTEP;
-    }
+    const springs = [...this.ears.L, ...this.ears.R, this.flap.swing, this.flap.side];
+    for (let i = 0; i < steps; i++) for (const s of springs) s.step(SUBSTEP);
 
     this.applyEars();
+    this.updateTail(dt, steps, weight);
     if (weight <= 1e-3) return;
-    this.applyTail(weight, charQ);
     this.applyFlap(weight);
   }
 
@@ -311,20 +537,6 @@ export class Procedural {
     }
   }
 
-  applyTail(weight, charQ) {
-    const yaw = this.tail.yaw.x * weight;
-    const pitch = this.tail.pitch.x * weight;
-    if (Math.abs(yaw) + Math.abs(pitch) < 1e-5) return;
-    const right = _v2.set(1, 0, 0).applyQuaternion(charQ);
-    TAIL.forEach((n, i) => {
-      const bone = this.b[n];
-      if (!bone) return;
-      _q.setFromAxisAngle(_up, yaw * TAIL_SHARE[i]);
-      _q2.setFromAxisAngle(right, pitch * TAIL_SHARE[i]);
-      rotateWorld(bone, _q.multiply(_q2));
-    });
-  }
-
   applyFlap(weight) {
     const chest = this.b.chest;
     if (!chest) return;
@@ -339,5 +551,191 @@ export class Procedural {
       _q2.setFromAxisAngle(fwd, this.flap.side.x * share * weight);
       rotateWorld(bone, _q.multiply(_q2));
     }
+  }
+
+  // ---- tail chain ------------------------------------------------------------------------------
+
+  initTail() {
+    const bones = [];
+    for (const n of TAIL) {
+      const b = this.b[n];
+      if (!b || (bones.length && b.parent !== bones[bones.length - 1])) break;
+      bones.push(b);
+    }
+    this.tailBones = bones.length >= 2 ? bones : [];
+    const n = this.tailBones.length;
+    this.tailFrame = n ? bones[0].parent : null; // the hips: the frame the chain is simulated in
+    this.tailLen = this.tailBones.map((b, i) => (i < n - 1 ? bones[i + 1].position.length() : bones[i].position.length()));
+    const vecs = () => Array.from({ length: n }, () => new THREE.Vector3());
+    this.tail = {
+      d: vecs(), v: vecs(), // simulated tip deviation / velocity (frame coords)
+      tips: vecs(), heads: vecs(), // animated chain (frame coords)
+      D: vecs(), // target deviation (drag + sway)
+      P: Array.from({ length: n + 1 }, () => new THREE.Vector3()), // bend scratch
+      f: vecs(), // inertial drive per tip
+      kin: new Kinematics(),
+      modelInv: new THREE.Matrix4(),
+    };
+    // Drag: rotation vector (frame coords, axis * angle), smoothed towards `want`.
+    this.drag = { active: false, want: new THREE.Vector3(), rot: [0, 1, 2].map(() => ({ x: 0, v: 0 })), rotVec: new THREE.Vector3() };
+    this.tailFlicks = 0;
+    this.tailSway = 1; // 0..1 weight of the idle travelling wave
+  }
+
+  resetTail() {
+    const T = this.tail;
+    if (!T) return;
+    for (const a of [T.d, T.v]) for (const x of a) x.set(0, 0, 0);
+    T.kin.reset();
+    for (const r of this.drag.rot) r.x = r.v = 0;
+    this.drag.active = false;
+    this.drag.want.set(0, 0, 0);
+  }
+
+  /**
+   * Drag the tail: `worldDelta` = pointer displacement (world units, on a camera-facing plane
+   * through the grab point) since the press, or null to let go. The tail bends so its tip
+   * follows the pointer, spread along the chain (more near the tip), clamped to +-60 degrees.
+   */
+  dragTail(worldDelta) {
+    const n = this.tailBones.length;
+    if (!n) return;
+    if (!worldDelta) {
+      this.drag.active = false;
+      this.drag.want.set(0, 0, 0);
+      return;
+    }
+    this.drag.active = true;
+    const F = this.tailFrame;
+    const base = this.tailBones[0].getWorldPosition(_v);
+    const tip = this.tailBones[n - 1].localToWorld(_v2.set(0, this.tailLen[n - 1], 0));
+    const from = tip.sub(base); // base -> tip
+    const to = _v3.copy(from).add(worldDelta);
+    const angle = Math.min(DRAG_MAX, from.angleTo(to) * DRAG_GAIN);
+    _axis.crossVectors(from, to);
+    if (_axis.lengthSq() < 1e-10 || angle < 1e-4) {
+      this.drag.want.set(0, 0, 0);
+      return;
+    }
+    // world axis -> frame coords
+    F.getWorldQuaternion(_q).invert();
+    this.drag.want.copy(_axis.normalize().applyQuaternion(_q)).multiplyScalar(angle);
+  }
+
+  get tailDragging() {
+    return this.drag.active;
+  }
+
+  /** Quick sideways flick of the tail (hover), `sign` = +1 / -1 (fox's left / right). */
+  flickTail(sign = this.rng() < 0.5 ? -1 : 1) {
+    const T = this.tail;
+    if (!this.tailBones.length) return;
+    for (let i = 0; i < T.v.length; i++) {
+      T.v[i].x += sign * 1.9 * FLICK[i];
+      T.v[i].y += 0.5 * FLICK[i];
+    }
+    this.tailFlicks++;
+  }
+
+  /** Largest angle (deg) between a tail bone's final and animated direction (debug / tests). */
+  get tailBend() {
+    return this._tailBend || 0;
+  }
+
+  updateTail(dt, steps, weight) {
+    const bones = this.tailBones;
+    const n = bones.length;
+    if (!n) return;
+    const T = this.tail;
+    const F = this.tailFrame;
+
+    // 1. Animated chain in the frame's coordinates (from the local transforms, no matrices).
+    let q = _q.identity();
+    T.heads[0].copy(bones[0].position);
+    for (let i = 0; i < n; i++) {
+      q = q.multiply(bones[i].quaternion);
+      if (i < n - 1) T.heads[i + 1].copy(bones[i + 1].position).applyQuaternion(q).add(T.heads[i]);
+      if (i < n - 1) T.tips[i].copy(T.heads[i + 1]);
+      else T.tips[i].copy(Y).multiplyScalar(this.tailLen[i]).applyQuaternion(q).add(T.heads[i]);
+    }
+
+    // 2. Target deviation: drag bend + idle travelling wave, as a per-joint rotation.
+    const D = this.drag;
+    for (let k = 0; k < 3; k++) critDamp(D.rot[k], D.want.getComponent(k), D.active ? 16 : 28, dt);
+    D.rotVec.set(D.rot[0].x, D.rot[1].x, D.rot[2].x);
+    const dragAngle = D.rotVec.length();
+    const dragAxis = dragAngle > 1e-5 ? _v2.copy(D.rotVec).divideScalar(dragAngle) : null;
+    const sway = this.randomness ? this.tailSway * weight : 0;
+    const P = T.P;
+    P[0].copy(T.heads[0]);
+    for (let i = 0; i < n; i++) P[i + 1].copy(T.tips[i]);
+    for (let j = 0; j < n; j++) {
+      const swayAngle = sway * SWAY_AMP[j] * (0.75 * Math.sin(this.time * 2.1 - 0.55 * j) + 0.25 * Math.sin(this.time * 3.7 - 0.8 * j + 1.3));
+      _q2.setFromAxisAngle(Y, swayAngle); // frame (hips) up = character up
+      if (dragAxis) _q2.premultiply(_dq.setFromAxisAngle(dragAxis, dragAngle * DRAG_SHARE[j]));
+      for (let m = j + 1; m <= n; m++) P[m].sub(P[j]).applyQuaternion(_q2).add(P[j]);
+    }
+    for (let i = 0; i < n; i++) T.D[i].copy(P[i + 1]).sub(T.tips[i]);
+
+    // 3. Inertial drive from the hips frame's motion (model space, so the root scale pop and
+    //    fade never read as motion).
+    T.modelInv.copy(this.fox.root.matrixWorld).invert();
+    const moving = T.kin.update(F, T.modelInv, dt);
+    if (!moving && T.kin.frames === 0) for (const a of [T.d, T.v]) for (const x of a) x.set(0, 0, 0);
+    _qi.copy(T.kin.q).invert();
+    const aF = _v.copy(T.kin.acc).applyQuaternion(_qi);
+    const alphaF = _v3.copy(T.kin.alpha).applyQuaternion(_qi);
+    for (let i = 0; i < n; i++) {
+      // f = -a - alpha x r  (linear + Euler fictitious accelerations)
+      T.f[i].crossVectors(alphaF, T.tips[i]).add(aF).multiplyScalar(-TAIL_INERTIA);
+    }
+
+    // 4. Integrate (fixed substeps, semi-implicit Euler). Joint i pulls its tip towards the
+    //    parent's deviation (+ its own target offset), so disturbances propagate to the tip.
+    const e = _v2;
+    const ev = _s;
+    for (let s = 0; s < steps; s++) {
+      for (let i = 0; i < n; i++) {
+        const w = TAIL_OMEGA[i];
+        const k = w * w;
+        const c = 2 * TAIL_ZETA[i] * w;
+        e.copy(T.d[i]).sub(T.D[i]);
+        ev.copy(T.v[i]);
+        if (i > 0) {
+          e.sub(T.d[i - 1]).add(T.D[i - 1]);
+          ev.sub(T.v[i - 1]);
+        }
+        T.v[i].addScaledVector(e, -k * SUBSTEP).addScaledVector(ev, -c * SUBSTEP).addScaledVector(T.f[i], SUBSTEP);
+        T.d[i].addScaledVector(T.v[i], SUBSTEP);
+        // keep each joint's bend within its limit (no wild poses on long or jittery frames)
+        e.copy(T.d[i]).sub(T.D[i]);
+        if (i > 0) e.sub(T.d[i - 1]).add(T.D[i - 1]);
+        const lim = TAIL_MAX_BEND[i] * this.tailLen[i];
+        const len = e.length();
+        if (len > lim) {
+          T.d[i].addScaledVector(e, lim / len - 1);
+          T.v[i].multiplyScalar(0.6);
+        }
+      }
+    }
+
+    // 5. Aim each bone at its (deviated) tip, base first.
+    let maxBend = 0;
+    for (let i = 0; i < n; i++) {
+      const bone = bones[i];
+      _v.copy(T.tips[i]).add(T.D[i]).addScaledVector(_v3.copy(T.d[i]).sub(T.D[i]), weight);
+      F.localToWorld(_v); // desired tip, world
+      const headW = bone.getWorldPosition(_v2);
+      const want = _v.sub(headW);
+      const cur = i < n - 1 ? bones[i + 1].getWorldPosition(_v3).sub(headW) : _v3.copy(Y).applyQuaternion(bone.getWorldQuaternion(_q2));
+      if (want.lengthSq() < 1e-12 || cur.lengthSq() < 1e-12) continue;
+      want.normalize();
+      cur.normalize();
+      const ang = cur.angleTo(want);
+      if (ang < 1e-5) continue;
+      maxBend = Math.max(maxBend, ang);
+      rotateWorld(bone, _q.setFromUnitVectors(cur, want));
+    }
+    this._tailBend = maxBend / DEG;
   }
 }
