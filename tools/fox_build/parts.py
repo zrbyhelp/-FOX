@@ -42,9 +42,9 @@ def head_colors(V, N):
     ql = ear_local(V)
     t_ear = np.clip(ql[:, 1] / EAR_LEN, 0, 1)
     # (the cavity floor sits ~6 mm off the cone surface after the smooth subtraction)
-    # front test: the cavity floor sits a little behind the ear's mid-plane (ql z ~ -0.01); the
-    # back surface (ql z ~ -0.044) is excluded by d_in anyway
-    inner = S.smoothstep(0.011, 0.004, d_in) * S.smoothstep(-0.032, -0.018, ql[:, 2])
+    # the bowl's floor sits behind the ear axis (ql z ~ -0.025); the thick back of the shell
+    # (ql z ~ -0.09) stays cream; orange stops a few mm inside the curled lips
+    inner = S.smoothstep(0.009, 0.003, d_in) * S.smoothstep(-0.060, -0.042, ql[:, 2])
     ear_col = _mix(np.tile(C.linear("orange_light"), (len(V), 1)), C.linear("orange"),
                    S.smoothstep(0.05, 0.35, t_ear))
     return _mix(col, ear_col, inner)

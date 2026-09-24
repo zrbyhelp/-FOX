@@ -75,7 +75,6 @@ P = {
     "ear_base": (0.150, 0.016, 0.800),      # on top of the dome, not out at the corners
     "ear_tip": (0.272, 0.040, 1.040),       # ~27 deg out from vertical, like the art
     "ear_base_width": 0.268,                # big rounded-leaf ears (w/h ~1.0)
-    "ear_thickness": 0.080,
     # face anchors (x, z); y is projected onto the head surface at build time
     "eye_xz": (0.130, 0.582),                 # big, wide-set, low on the face (chibi)
     "eye_size": (0.073, 0.087),               # width, height of the open eye

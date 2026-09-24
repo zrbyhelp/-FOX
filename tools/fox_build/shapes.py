@@ -27,61 +27,49 @@ def _ear_frame():
 EAR_BASE, EAR_R, EAR_LEN = _ear_frame()
 
 
-def _tri2d(px, py, qx, qy):
-    """IQ isosceles triangle SDF: apex at origin, base (half width qx) at y = qy > 0."""
-    px = np.abs(px)
-    qq = qx * qx + qy * qy
-    t = np.clip((px * qx + py * qy) / qq, 0.0, 1.0)
-    ax = px - qx * t; ay = py - qy * t
-    tb = np.clip(px / qx, 0.0, 1.0)
-    bx = px - qx * tb; by = py - qy
-    d1 = np.minimum(ax * ax + ay * ay, bx * bx + by * by)
-    d2 = np.minimum(-(px * qy - py * qx), -(py - qy))
-    return -np.sqrt(d1) * np.sign(d2)
-
-
-EAR_ROUND = 0.055      # 2D corner rounding (rounded tip)
 EAR_Y0 = -0.035        # base sinks into the head
+EAR_FLAT = 0.84        # front-back squash of the ear's round cross-section
+EAR_TIP = 0.020        # radius of the softly rounded tip
 
 
-def _ear_outline(q, inset=0.0, y0=EAR_Y0):
-    """2D rounded-triangle distance in the ear plane (x across, y along)."""
-    hw = P["ear_base_width"] / 2
-    apex = EAR_LEN + EAR_ROUND * 0.55 - inset * 1.9
-    qx = hw - EAR_ROUND - inset * 0.8
-    qy = apex - y0
-    tri = _tri2d(q[:, 0], apex - q[:, 1], qx * (1 - EAR_ROUND / qy), qy - EAR_ROUND) - EAR_ROUND
-    # blend with an ellipse so the sides bulge slightly (rounded-leaf ear like the art)
-    ry = (apex - y0) / 2; rx = hw * 0.78 - inset
-    e = (np.sqrt((q[:, 0] / rx) ** 2 + ((q[:, 1] - (y0 + ry)) / ry) ** 2) - 1.0) * min(rx, ry)
-    return 0.7 * tri + 0.3 * e
+def _ear_radius(y):
+    """Half-width along the ear: a rounded leaf, full near the base with gently bulging sides."""
+    t = np.clip((y - EAR_Y0) / (EAR_LEN - EAR_Y0), 0.0, 1.0)
+    return EAR_TIP + (P["ear_base_width"] / 2 - EAR_TIP) * (1.0 - t ** 1.45) ** 0.82
 
 
-def _ear_half_thickness(y):
-    t = np.clip(y / EAR_LEN, 0, 1)
-    return P["ear_thickness"] / 2 * (1 - 0.38 * t)
+def _tube(q, ys, radii, z_off=None):
+    """Smooth tube along local y with a varying radius (chain of round cones)."""
+    z_off = np.zeros(len(ys)) if z_off is None else z_off
+    d = np.full(len(q), np.inf)
+    for i in range(len(ys) - 1):
+        d = np.minimum(d, S.round_cone(q, (0, ys[i], z_off[i]), (0, ys[i + 1], z_off[i + 1]),
+                                       radii[i], radii[i + 1]))
+    return d
 
 
 def _ear_shape(q, inner=False):
     """Fox auricle in ear-local coords q (x across, y along base->tip, z = front).
 
-    A flattened round cone (convex back) cut open at the front, with a deep scoop carved into
-    the front face (inner=True returns that scoop volume, which head_sdf subtracts and
-    parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
-    hw = P["ear_base_width"] / 2
-    fz = 0.74                                     # cone flattening front-back (keeps volume)
-    r_tip = 0.036                                 # rounded leaf tip
-    if inner:
-        rim = 0.030                               # cream rim all round (tip included)
-        qi = q.copy()
-        qi[:, 2] = (q[:, 2] - 0.025) / fz
-        cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.062, 0), hw - rim, r_tip * 0.45) * fz
-        return cav
-    qo = q.copy()
-    qo[:, 2] = q[:, 2] / fz
-    cone = S.round_cone(qo, (0, EAR_Y0, 0), (0, EAR_LEN - r_tip * 0.6, 0), hw, r_tip) * fz
-    front = q[:, 2] - 0.011                       # open the front of the cone
-    return S.smax(cone, front, 0.016)             # rounded rim where the cut meets the cone
+    A cupped shell, not a flat cut-out: the outer surface is a leaf-shaped tube (round cross
+    section, slightly squashed front-back); the hollow is a narrower tube shifted forward, so the
+    section is a C whose side lips curl forward and in around a deep bowl (like the art). The
+    hollow stops short of the tip, which stays solid cream. inner=True returns the hollow
+    (head_sdf subtracts it, parts.head_colors paints it orange)."""
+    ys = np.linspace(EAR_Y0, EAR_LEN - EAR_TIP * 0.3, 14)
+    R = _ear_radius(ys)
+    qq = q.copy()
+    qq[:, 2] = q[:, 2] / EAR_FLAT
+    if not inner:
+        return _tube(qq, ys, R) * EAR_FLAT
+    # hollow: from a little above the base to ~85% of the length, centred forward of the axis
+    t = np.clip((ys - EAR_Y0) / (EAR_LEN - EAR_Y0), 0, 1)
+    k = np.clip((t - 0.06) / 0.10, 0, 1) * np.clip((0.86 - t) / 0.14, 0, 1)     # fade in / out
+    # (in the squashed frame the outer section is a circle of radius R: a circle of radius 0.82R
+    #  centred 0.58R forward leaves side lips curling in to ~82% of the width, a deep bowl and a
+    #  thick rounded back)
+    Rin = np.maximum(R * 0.82 - 0.004, 0.003) * (0.35 + 0.65 * k)
+    return _tube(qq, ys, Rin, R * 0.58) * EAR_FLAT
 
 
 def ear_local(p):
