@@ -201,10 +201,12 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
   await page.mouse.move(p.x, p.y);
   await page.mouse.down();
   for (let k = 1; k <= 8; k++) await page.mouse.move(p.x - 14 * k, p.y - 10 * k, { steps: 2 });
-  const i = await waitFor((s) => s.tailBend > 15, 2500, 100);
+  const i = await waitFor((s) => s.tailTipOffset > 20, 2500, 100);
   const d1 = await page.evaluate(() => window.__fox.boneDir('tail_6'));
   const ang = (Math.acos(Math.min(1, d0.reduce((a, v, k) => a + v * d1[k], 0))) * 180) / Math.PI;
-  record('drag tail -> tail bends', i.tailDragging && ang > 12 ? 'PASS' : 'FAIL', `tail_6 turned ${ang.toFixed(1)} deg, bend ${i.tailBend.toFixed(1)}, dragging=${i.tailDragging}`);
+  // tail_6 world direction vs. the clip pose of the same frame (the idle sway alone moves it too)
+  record('drag tail -> tail bends', i.tailDragging && i.tailTipOffset > 20 ? 'PASS' : 'FAIL',
+    `tail_6 world direction ${i.tailTipOffset.toFixed(1)} deg off the clip pose (${ang.toFixed(1)} deg vs. before the drag), dragging=${i.tailDragging}`);
   const cam1 = await page.evaluate(() => window.__fox._app.stage.camera.position.toArray());
   const moved = Math.hypot(...cam0.map((v, n) => v - cam1[n]));
   record('tail drag does not orbit the camera', moved < 1e-3 ? 'PASS' : 'FAIL', `camera moved ${moved.toFixed(4)}`);

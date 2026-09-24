@@ -23,8 +23,9 @@ PAIRS = [
     # arm roots within ~10 cm of the shoulder pivot sit under the scarf ring (hidden)
     ("Arm_L", "Head", 0.012, ("upperArm_L", 0.10)),
     ("Arm_R", "Head", 0.012, ("upperArm_R", 0.10)),
-    ("Arm_L", "ScarfFlap", 0.012, ("upperArm_L", 0.10)),
-    ("Arm_R", "ScarfFlap", 0.012, ("upperArm_R", 0.10)),
+    # the flap is thin: tested against its volume (FlapGuard spheres), not the nearest-surface normal
+    ("Arm_L", "ScarfFlap", 0.008, ("upperArm_L", 0.10)),
+    ("Arm_R", "ScarfFlap", 0.008, ("upperArm_R", 0.10)),
     ("Arm_L", "Arm_R", 0.012, None),
     ("Tail", "Body", 0.020, ("tail_1", 0.12)),
     ("Tail", "Leg_L", 0.010, None),
@@ -68,8 +69,11 @@ def main():
                     mv = mv[np.linalg.norm(mv - Hw[ign[0]], axis=1) > ign[1]]
                 if not len(mv):
                     continue
-                trees.setdefault(obs, cKDTree(V[obs]))
-                dp = depth(mv, V[obs], N[obs], trees[obs]).max()
+                if obs == "ScarfFlap":
+                    dp = flap.depth(pose, mv)
+                else:
+                    trees.setdefault(obs, cKDTree(V[obs]))
+                    dp = depth(mv, V[obs], N[obs], trees[obs]).max()
                 key = f"{mover}>{obs}"
                 if dp > worst.get(key, (0, 0, 0))[0]:
                     worst[key] = (dp, f, allow)

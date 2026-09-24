@@ -30,6 +30,13 @@ fill.position.set(2.2, 1.2, 1.6);
 const rim = new THREE.DirectionalLight(0xffffff, 1.1);
 rim.position.set(0.6, 1.9, -2.6);
 scene.add(key, key.target, fill, rim);
+// The head-on orthographic camera sees undersides (chin, belly, inner ears) that the 3D camera,
+// from slightly above, mostly does not: a warm bounce from below-front plus a hemisphere lift
+// keeps the 2D art from carrying grey crescents under the head and belly.
+const bounce = new THREE.DirectionalLight(0xfff4ea, 0.8);
+bounce.position.set(0.2, -1.4, 2.4);
+const hemi = new THREE.HemisphereLight(0xfffaf4, 0xf6e6d6, 0.35);
+scene.add(bounce, hemi);
 
 const camera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0.01, 10);
 camera.position.set(0, 0.5, 5);

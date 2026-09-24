@@ -755,6 +755,15 @@ export class Procedural {
       rotateWorld(bone, _q.setFromUnitVectors(cur, want));
     }
     this._tailBend = maxBend / DEG;
+    // tip direction now vs. where the clip alone puts it (world), for tests
+    const last = bones[n - 1];
+    const animTip = _v.copy(T.dirs[n - 1]).transformDirection(F.matrixWorld);
+    this._tipOffset = animTip.angleTo(_v2.copy(Y).applyQuaternion(last.getWorldQuaternion(_q2))) / DEG;
+  }
+
+  /** Angle (deg) between tail_6's final world direction and its clip-only direction. */
+  get tailTipOffset() {
+    return this._tipOffset || 0;
   }
 
   resetTailMotion() {
@@ -762,6 +771,5 @@ export class Procedural {
     for (const a of [T.phi, T.w]) for (const x of a) x.set(0, 0, 0);
     T.aF.set(0, 0, 0);
     T.alphaF.set(0, 0, 0);
-
   }
 }

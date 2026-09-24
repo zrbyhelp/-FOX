@@ -173,11 +173,11 @@ class Lib:
             self.arm(p, s, (sx * 0.212, -0.092, 0.180), aim=(sx * 0.20, -0.30, -1.0))
         return both_fingers(p, 85, 60)   # relaxed: fingers folded into a mitten
 
-    def clasp(self, p=None):
+    def clasp(self, p=None, **kw):
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.041, -0.240, 0.302), aim=(sx * -0.20, -0.25, 1.0))   # in front of the flap
+            self.arm(p, s, (sx * 0.041, -0.240, 0.302), aim=(sx * -0.20, -0.25, 1.0), **kw)   # in front of the flap
         return both_fingers(p, 85, 60)
 
     def heart(self, p=None):
@@ -624,7 +624,7 @@ def make_clips(rig: Rig):
 
     # Pet (loop): leaning into the hand, eyes ^^, ears back, tail wagging
     pet = stand.copy().expression(eyes="happy"); pet.add("head", x=2)
-    pet = L.clasp(pet)
+    pet = L.clasp(pet, head_margin=0.022)       # room for the nuzzling head sway (overlay)
     pet.set("ear_L", x=-22, y=8); pet.set("ear_R", x=-22, y=-8)
     def pet_ov(t, p):
         ph = 2 * math.pi * t / 1.6
@@ -701,8 +701,8 @@ def make_clips(rig: Rig):
         p = stand.copy()
         p.add("head", x=12).add("neck", x=4)
         p.set("ear_L", x=6, y=-4); p.set("ear_R", x=6, y=4)
-        L.arm(p, "L", (xl, -0.236, zl), aim=(-0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
-        L.arm(p, "R", (xr, -0.236, zr), aim=(0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
+        L.arm(p, "L", (xl, -0.252, zl), aim=(-0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
+        L.arm(p, "R", (xr, -0.252, zr), aim=(0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
         return both_fingers(p, 40, 26)
     DOWN, UP = 0.272, 0.300
     tp = [typing_pose(0.072, DOWN, -0.072, UP), typing_pose(0.080, UP, -0.060, DOWN),

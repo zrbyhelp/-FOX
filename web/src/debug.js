@@ -57,6 +57,7 @@ export function installDebug(app) {
       tailFlicks: procedural.tailFlicks,
       tailDragging: procedural.tailDragging,
       tailBend: procedural.tailBend,
+      tailTipOffset: procedural.tailTipOffset,
       lookWeight: procedural.look.w.x,
       talking: procedural.talkEnv.x > 0.5,
       talkOpen: procedural.talkOpen,

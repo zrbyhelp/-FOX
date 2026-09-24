@@ -117,7 +117,12 @@ export async function createLive2DApp({
   else if (getComputedStyle(container).position === 'static') container.style.position = 'relative';
   canvas.style.display = 'none';
   container.append(canvas);
-  await puppet.load();
+  try {
+    await puppet.load();
+  } catch (err) {
+    puppet.dispose(); // no WebGL context / canvas left behind
+    throw err;
+  }
 
   const rig = new Rig(puppet);
   const physics = new Physics();
