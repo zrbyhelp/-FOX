@@ -8,7 +8,7 @@ import numpy as np
 
 from . import config as C
 from . import sdf as S
-from .shapes import (EAR_LEN, _arm_pts, _leg_pts, ear_inner, ear_local, ear_outer, head_core)
+from .shapes import (EAR_LEN, EAR_Y0, _arm_pts, _leg_pts, ear_local, ear_outer, ear_section, head_core)
 
 P = C.P
 
@@ -37,14 +37,14 @@ def head_colors(V, N):
     e_bl = ((ax - bx) / 0.046) ** 2 + ((z - bz) / 0.032) ** 2
     blush = np.exp(-1.6 * e_bl) * S.smoothstep(0.0, -0.08, y)
     col = _mix(col, C.linear("blush"), np.clip(blush * 1.05, 0, 0.92))
-    # inner ear orange (recessed area) with a lighter base
-    d_in = ear_inner(V)
+    # inner ear: the cavity side of the rolled sheet (and the cavity floor) is orange, lighter at
+    # the base; the outside, the lateral rim and the rolled medial lip stay cream
     ql = ear_local(V)
+    _, off, h = ear_section(ql)
     t_ear = np.clip(ql[:, 1] / EAR_LEN, 0, 1)
-    # (the cavity floor sits ~6 mm off the cone surface after the smooth subtraction)
-    # the bowl's floor sits behind the ear axis (ql z ~ -0.025); the thick back of the shell
-    # (ql z ~ -0.09) stays cream; orange stops a few mm inside the curled lips
-    inner = S.smoothstep(0.013, 0.005, d_in) * S.smoothstep(-0.048, -0.032, ql[:, 2])
+    t_sec = (ql[:, 1] - EAR_Y0) / (EAR_LEN - EAR_Y0)
+    inner = (S.smoothstep(0.45, -0.45, off / np.maximum(h, 1e-4))
+             * S.smoothstep(-0.05, 0.05, t_sec) * S.smoothstep(0.97, 0.90, t_sec))
     ear_col = _mix(np.tile(C.linear("orange_light"), (len(V), 1)), C.linear("orange"),
                    S.smoothstep(0.05, 0.35, t_ear))
     return _mix(col, ear_col, inner)

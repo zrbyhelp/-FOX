@@ -12,11 +12,12 @@ P = C.P
 
 
 def _ear_frame():
-    """Frame for the LEFT ear (+X). Columns: x = across ear, y = base->tip, z = front normal."""
+    """Frame for the LEFT ear (+X). Columns: x = across ear (+ = lateral), y = base->tip,
+    z = front normal."""
     base = np.array(P["ear_base"], float)
     tip = np.array(P["ear_tip"], float)
     axis = tip - base
-    front = np.array([0.38, -1.0, 0.05])  # forward and a little outward
+    front = np.array([0.18, -1.0, 0.05])  # forward, a little outward
     y = axis / np.linalg.norm(axis)
     z = front - (front @ y) * y
     z /= np.linalg.norm(z)
@@ -27,53 +28,62 @@ def _ear_frame():
 EAR_BASE, EAR_R, EAR_LEN = _ear_frame()
 
 
+# The ear is a rolled sheet, like a fennec's (smaller and rounder): a C-shaped section swept from
+# the base to the tip. Section angles (deg) are measured about the ear axis from the front (+z)
+# toward the lateral side (+x). The sheet runs from the LATERAL lip (at the ear's outer side: a
+# thin rim that does not curl) round the lateral side, the bulging back and the medial side, and
+# wraps onto the front up to the MEDIAL lip: a rounded rolled ridge covering the medial part of
+# the cavity, wider toward the base where it wraps the ear's root. Between the lips the deep
+# cavity is open to the front.
 EAR_Y0 = -0.035        # base sinks into the head
-EAR_FLAT = 0.50        # front-back squash: a broad leaf-like shell, not a round horn
-EAR_TIP = 0.020        # radius of the softly rounded tip
-EAR_OPEN_T = 0.49      # the ear's front is closed below this (~ the lower third above the head)
+EAR_FRONT = 0.55       # front / back squash of the section (the back bulges more)
+EAR_BACK = 0.72
+EAR_TT = [0.0, 0.15, 0.35, 0.55, 0.75, 0.84, 0.90, 1.0]     # along the ear, base -> tip
+EAR_PL = [82, 82, 80, 78, 72, 60, 40, 40]                   # lateral lip angle
+EAR_PM = [25, 5, -32, -46, -42, -22, 30, 40]                # medial lip angle (wraps onto the front)
+EAR_HB = [0.26, 0.24, 0.22, 0.22, 0.24, 0.30, 0.50, 0.50]   # back half-thickness / R
+EAR_HL = [0.07, 0.07, 0.07, 0.07, 0.08, 0.12, 0.50, 0.50]   # lateral rim half-thickness / R
+EAR_HM = [0.20, 0.20, 0.19, 0.18, 0.18, 0.20, 0.50, 0.50]   # medial rolled lip radius / R
+EAR_HMS = [0.16, 0.15, 0.13, 0.12, 0.12, 0.16, 0.50, 0.50]  # medial sheet half-thickness / R
+# (from ~0.9 up all four reach 0.5 R: the section closes into the solid, softly rounded tip)
 
 
 def _ear_radius(y):
-    """Half-width along the ear: a rounded leaf, full near the base with gently bulging sides."""
+    """Half-width of the leaf outline; ~(1 - t)^0.62 at the end gives a softly rounded tip."""
     t = np.clip((y - EAR_Y0) / (EAR_LEN - EAR_Y0), 0.0, 1.0)
-    return EAR_TIP + (P["ear_base_width"] / 2 - EAR_TIP) * (1.0 - t ** 1.45) ** 0.82
+    return (P["ear_base_width"] / 2) * np.maximum(1.0 - t ** 1.6, 0.0) ** 0.62 + 1e-4
 
 
-def _tube(q, ys, radii, z_off=None):
-    """Smooth tube along local y with a varying radius (chain of round cones)."""
-    z_off = np.zeros(len(ys)) if z_off is None else z_off
-    d = np.full(len(q), np.inf)
-    for i in range(len(ys) - 1):
-        d = np.minimum(d, S.round_cone(q, (0, ys[i], z_off[i]), (0, ys[i + 1], z_off[i + 1]),
-                                       radii[i], radii[i + 1]))
-    return d
-
-
-def _ear_shape(q, inner=False):
-    """Fox auricle in ear-local coords q (x across, y along base->tip, z = front).
-
-    A cupped shell, not a flat cut-out: the outer surface is a leaf-shaped tube (round cross
-    section, squashed front-back); the hollow is a narrower tube shifted forward, so the section
-    is a C whose side lips curl forward and in around a deep bowl (like the art). Like a real
-    fox ear the front closes up over the lower third of the ear (above the head): the hollow only
-    opens from there up, its lower edge a rounded U, and stops short of the tip, which stays solid
-    cream. inner=True returns the hollow (head_sdf subtracts it, parts.head_colors paints it)."""
+def ear_section(q):
+    """Rolled-sheet ear in ear-local coords q. Returns (d, off, h): the (squashed) distance to
+    the sheet, the radial offset from the sheet's mid-surface (< 0 = the inner, cavity side) and
+    the local half-thickness."""
     qq = q.copy()
-    qq[:, 2] = q[:, 2] / EAR_FLAT
-    if not inner:
-        ys = np.linspace(EAR_Y0, EAR_LEN - EAR_TIP * 0.3, 14)
-        return _tube(qq, ys, _ear_radius(ys)) * EAR_FLAT
-    # hollow over t in [EAR_OPEN_T, 0.90]: it starts with a rounded end (0.55 of its full size ->
-    # a U-shaped lower edge), opens to full size over the next 0.10 and fades out near the tip
-    t = np.linspace(EAR_OPEN_T, 0.90, 12)
-    ys = EAR_Y0 + t * (EAR_LEN - EAR_Y0)
-    R = _ear_radius(ys)
-    k = (0.55 + 0.45 * np.clip((t - EAR_OPEN_T) / 0.10, 0, 1)) * np.clip((0.92 - t) / 0.14, 0.12, 1)
-    # (in the squashed frame the outer section is a circle of radius R: a circle of radius 0.82R
-    #  centred 0.58R forward leaves side lips curling in to ~82% of the width, a deep bowl and a
-    #  thick rounded back)
-    Rin = np.maximum(R * 0.82 - 0.004, 0.003) * k
-    return _tube(qq, ys, Rin, R * 0.58) * EAR_FLAT
+    qq[:, 2] = np.where(q[:, 2] > 0, q[:, 2] / EAR_FRONT, q[:, 2] / EAR_BACK)
+    t = np.clip((q[:, 1] - EAR_Y0) / (EAR_LEN - EAR_Y0), 0, 1)
+    R = _ear_radius(np.maximum(q[:, 1], EAR_Y0))
+    f = lambda tab: np.interp(t, EAR_TT, tab)
+    pl, pm = np.radians(f(EAR_PL)), np.radians(f(EAR_PM))
+    hb, hl, hm, hms = f(EAR_HB) * R, f(EAR_HL) * R, f(EAR_HM) * R, f(EAR_HMS) * R
+    x, z = qq[:, 0], qq[:, 2]
+    r = np.hypot(x, z)
+    span = pm + 2 * np.pi - pl                   # lateral lip -> back -> medial lip
+    a = np.mod(np.arctan2(x, z) - pl, 2 * np.pi)
+    a_back = np.pi - pl
+    # half-thickness along the sheet: thin lateral rim -> plush back -> medial sheet
+    u1 = S.smoothstep(0.0, 1.0, np.clip(a / np.maximum(a_back, 1e-3), 0, 1))
+    u2 = S.smoothstep(0.0, 1.0, np.clip((a - a_back) / np.maximum(span - a_back, 1e-3), 0, 1))
+    h = np.where(a < a_back, hl + (hb - hl) * u1, hb + (hms - hb) * u2)
+    rho = R - h                                   # the outer surface stays on the leaf outline
+    d_arc = np.where(a <= span, np.abs(r - rho) - h, np.inf)
+    # round lips: a thin rim on the lateral side, a fuller rolled lip on the medial side
+    p2 = np.stack([x, z], 1)
+    eL = np.stack([(R - hl) * np.sin(pl), (R - hl) * np.cos(pl)], 1)
+    eM = np.stack([(R - hm) * np.sin(pm), (R - hm) * np.cos(pm)], 1)
+    d = np.minimum.reduce([d_arc, np.linalg.norm(p2 - eL, axis=1) - hl, np.linalg.norm(p2 - eM, axis=1) - hm])
+    d = np.maximum(d, q[:, 1] - EAR_LEN)          # nothing past the tip
+    d = np.maximum(d, EAR_Y0 - q[:, 1])           # capped inside the head
+    return d, r - rho, h
 
 
 def ear_local(p):
@@ -99,27 +109,12 @@ def head_core(p):
 
 
 def ear_outer(p):
-    return _ear_shape(ear_local(p))
-
-
-def ear_inner(p):
-    return _ear_shape(ear_local(p), inner=True)
-
-
-def ear_seam(p):
-    """A shallow crease down the closed lower front of the ear, where its two edges wrap round
-    and meet (from just above the head to the bottom of the opening)."""
-    q = ear_local(p)
-    y0, y1 = 0.045, EAR_Y0 + (EAR_OPEN_T - 0.02) * (EAR_LEN - EAR_Y0)
-    a = (0.0, y0, float(_ear_radius(np.array([y0]))[0]) * EAR_FLAT + 0.0016)
-    b = (0.0, y1, float(_ear_radius(np.array([y1]))[0]) * EAR_FLAT + 0.0016)
-    return S.capsule(q, a, b, 0.0038)
+    """Distance to the ear (the rolled sheet; scaled to stay a conservative bound)."""
+    return ear_section(ear_local(p))[0] * EAR_FRONT * 0.9
 
 
 def head_sdf(p):
-    d = S.smin(head_core(p), ear_outer(p), 0.035)
-    d = S.ssub(d, ear_inner(p), 0.010)
-    return S.ssub(d, ear_seam(p), 0.004)
+    return S.smin(head_core(p), ear_outer(p), 0.035)
 
 
 HEAD_BBOX = ((-0.44, -0.28, 0.36), (0.44, 0.27, 1.12))
