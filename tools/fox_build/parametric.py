@@ -169,6 +169,7 @@ def _body_radius(theta, z):
 
 
 SCARF_FLAP_THETA = -np.pi / 2 + 0.60
+FLAP_HW, FLAP_HT = 0.043, 0.0115          # flap half width / half thickness
 
 
 def scarf_ring_mesh(n_u=96, n_v=20, u_repeat=14):
@@ -218,7 +219,7 @@ def scarf_flap_mesh(n_len=44, n_seg=40, u_repeat=3.0):
     rad = np.array([np.cos(th), np.sin(th), 0.0])
     tang = np.array([-np.sin(th), np.cos(th), 0.0])   # across the flap width
     z_top, z_bot = P["scarf_z"] - 0.005, 0.235
-    hw, ht = 0.043, 0.0115
+    hw, ht = FLAP_HW, FLAP_HT
     zs = np.linspace(z_top, z_bot, n_len)
     rb = np.array([_body_radius(np.array([th]), z)[0] for z in zs])
     # keep the flap hanging (not glued into concavities): monotone outward offset
@@ -258,6 +259,30 @@ def scarf_flap_mesh(n_len=44, n_seg=40, u_repeat=3.0):
     return V, F, Nn, UV, vp, wp, front, (rad, tang, centers)
 
 
+def scarf_flap_spheres(n_across=9):
+    """Mid-surface sample points of the hanging flap (rest pose) and their length parameter;
+    a union of spheres of radius FLAP_HT around them approximates the flap's volume."""
+    rad, tang, centers = scarf_flap_mesh()[-1]
+    w = np.linspace(-(FLAP_HW - FLAP_HT), FLAP_HW - FLAP_HT, n_across)
+    pts = (centers[:, None, :] + w[None, :, None] * tang).reshape(-1, 3)
+    vp = np.repeat(np.linspace(0.0, 1.0, len(centers)), n_across)
+    return pts, vp
+
+
+def scarf_flap_sdf(n_across=9, inflate=0.008):
+    """Approximate SDF of the flap in the rest pose. The arm solver adds it to the body so
+    forearms crossing the chest rest on top of the flap instead of cutting through it
+    (inflated: the solver only tests a sparse subset of the arm vertices)."""
+    from scipy.spatial import cKDTree
+    tree = cKDTree(scarf_flap_spheres(n_across)[0])
+
+    def sdf(p):
+        p = np.asarray(p, float)
+        d, _ = tree.query(p.reshape(-1, 3))
+        return (d - FLAP_HT - inflate).reshape(p.shape[:-1])
+    return sdf
+
+
 def scarf_flap_weights(vp):
     w2 = S.smoothstep(0.35, 0.75, vp)
     top = S.smoothstep(0.12, 0.0, vp)
@@ -271,7 +296,7 @@ def scarf_squares(frame):
     out = []
     for (wc, vc) in ((-0.34, 0.66), (0.34, 0.84)):
         i = int(round(vc * (n_len - 1)))
-        c = centers[i] + tang * (wc * 0.043) + rad * (0.0115 + 0.0006)
+        c = centers[i] + tang * (wc * FLAP_HW) + rad * (FLAP_HT + 0.0006)
         R = np.stack([tang, np.array([0, 0, 1.0]), rad], 1)
         V, F, N = rounded_slab(c, R, (0.0115, 0.0105, 0.0016), 0.0012)
         out.append((V, F, N, vc))

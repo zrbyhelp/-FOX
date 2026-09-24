@@ -13,7 +13,7 @@
 //
 // All coordinates are model units from rig.json (x = fox's left = screen right, y up).
 import {
-  DEG, aff, affMul, affRotate, affScale, affTranslate, affCopy, affApplyX, affApplyY, smooth, smoothstep, clamp, lerp,
+  DEG, aff, affMul, affRotate, affScale, affTranslate, affApplyX, affApplyY, smooth, smoothstep, clamp, lerp,
 } from './math2d.js';
 
 /** name: [min, max, default]. Angles in degrees. */
@@ -42,7 +42,7 @@ export const PARAMS = {
   ParamArmRB: [-180, 180, 0],
   ParamArmRC: [-90, 90, 0],
   ParamArmROrder: [0, 2, 0],
-  ParamTailSwing: [-60, 60, 12], // + = tail swings out to screen right (its natural side)
+  ParamTailSwing: [-60, 60, 20], // + = tail swings out to screen right (its natural side)
   ParamEarL: [-40, 40, 0], // + = ear rotates outwards / back
   ParamEarR: [-40, 40, 0],
   ParamFlap: [-40, 40, 0],
@@ -214,6 +214,43 @@ class Chain {
   }
 }
 
+/**
+ * Where the visible part of an ear meets the top of the head (the inner-top contact point).
+ * Rotating the ear about it keeps that junction closed, so no background shows between the ear
+ * and the crown. Found from the layers' alpha maps; null if the layers do not touch.
+ */
+function findEarHinge(ear, head) {
+  if (!ear || !head) return null;
+  const opaque = (L, x, y) => {
+    const d = L.def;
+    const A = L.alpha;
+    const u = (x - d.x0) / d.w;
+    const v = (y - d.y0) / d.h;
+    if (u < 0 || u >= 1 || v < 0 || v >= 1) return false;
+    return A.a[Math.floor((1 - v) * A.h) * A.w + Math.floor(u * A.w)] > 128;
+  };
+  const d = ear.def;
+  const A = ear.alpha;
+  const px = d.w / A.w;
+  const pts = [];
+  for (let j = 0; j < A.h; j++) {
+    for (let i = 0; i < A.w; i++) {
+      if (A.a[j * A.w + i] <= 128) continue;
+      const x = d.x0 + (i + 0.5) * px;
+      const y = d.y0 + d.h - (j + 0.5) * (d.h / A.h);
+      if (opaque(head, x, y)) continue;
+      let near = false;
+      for (let dy = -1; dy <= 1 && !near; dy++) for (let dx = -1; dx <= 1; dx++) if (opaque(head, x + dx * px, y + dy * px)) { near = true; break; }
+      if (near) pts.push([x, y]);
+    }
+  }
+  if (!pts.length) return null;
+  const ymax = Math.max(...pts.map((p) => p[1]));
+  const top = pts.filter((p) => p[1] > ymax - 0.03);
+  top.sort((a, b) => Math.abs(a[0]) - Math.abs(b[0]));
+  return [top[0][0], top[0][1]];
+}
+
 // ---- rig --------------------------------------------------------------------------------------
 
 export class Rig {
@@ -234,7 +271,6 @@ export class Rig {
     this.T = {
       root: aff(), lean: aff(), body: aff(), head: aff(), headLocal: aff(), arm: aff(), tmp: aff(), tmp2: aff(), tmp3: aff(),
     };
-    this.sigBuf = new Float64Array(64);
     this.chains = {};
     this.binds = {};
 
@@ -259,14 +295,16 @@ export class Rig {
         const rest = layer.rest;
         for (let i = 0; i < front.length; i++) {
           const d = Math.hypot(rest[i * 2] - ex, rest[i * 2 + 1] - ey);
-          const inCircle = clamp((R - d) / 0.01 + 0.5, 0, 1);
-          const past = clamp((bind.s[i] - ch.S[1]) / 0.01 + 0.5, 0, 1);
+          const inCircle = clamp((R - d) / 0.032 + 0.5, 0, 1);
+          const past = clamp((bind.s[i] - ch.S[1]) / 0.032 + 0.5, 0, 1);
           front[i] = Math.max(inCircle, past);
         }
         puppet.splitLayer(layer.name, front);
       }
       const ear = mk(`ear_${s}`, C[`ear_${s}`], { anchor: [-0.06, 0.0], blend: 0.045 });
       if (ear && L[`Ear_${s}`]) this.binds[`Ear_${s}`] = ear.bind(L[`Ear_${s}`].rest);
+      this.earHinge = this.earHinge || {};
+      this.earHinge[s] = findEarHinge(L[`Ear_${s}`], L.Head) || pv(`ear_${s}`, [(s === 'L' ? 1 : -1) * 0.17, 0.79]);
     }
     // tail: skip the short first link that dips into the body
     const tailJ = C.tail && C.tail.length > 3 ? C.tail.slice(1) : C.tail;
@@ -301,7 +339,7 @@ export class Rig {
     affMul(T.lean, sk, T.lean);
     affMul(T.lean, affRotate(T.tmp, p.ParamBodyAngleZ * DEG, hx, hy), T.lean);
 
-    this.sitY = -0.052 * p.ParamSit;
+    this.sitY = -0.066 * p.ParamSit;
     // body (children): root * sit * lean
     affMul(T.body, affTranslate(T.tmp, 0, this.sitY), T.lean);
     affMul(T.body, T.root, T.body);
@@ -438,8 +476,8 @@ export class Rig {
     const r = L.rest;
     const o = L.pos;
     const q = [0, 0];
-    const sy = 1 - 0.38 * sit;
-    const sx = 1 + 0.1 * sit;
+    const sy = 1 - 0.46 * sit;
+    const sx = 1 + 0.12 * sit;
     for (let i = 0, n = r.length / 2; i < n; i++) {
       const x = r[i * 2];
       const y = r[i * 2 + 1];
@@ -587,10 +625,14 @@ export class Rig {
       this.writeAffine(L, post);
       return true;
     }
+    // the whole ear swings about the crown junction; the chain only bends the tip after it
+    const base = (-side * p[`ParamEar${s}`] + p[`PhysEar${s}`]) * DEG;
+    const hinge = this.earHinge[s];
+    affMul(post, post, affRotate(T.tmp3, base, hinge[0], hinge[1]));
     const ang = this.angles;
-    ang[0] = (-side * p[`ParamEar${s}`] + p[`PhysEar${s}`]) * DEG;
+    ang[0] = 0;
     ang[1] = (-side * p[`ParamEar${s}`] * 0.4 + p[`PhysEar${s}Tip`]) * DEG;
-    if (!this.changed(L, [...post, ang[0], ang[1]])) return false;
+    if (!this.changed(L, [...post, ang[1]])) return false;
     ch.pose(ang);
     this.skin(L, ch, bind, post);
     return true;
@@ -790,4 +832,3 @@ export class Rig {
   }
 }
 
-export { affCopy };

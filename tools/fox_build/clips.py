@@ -89,10 +89,11 @@ _SOLVER = {}
 def get_solver(rig: Rig):
     key = id(rig)
     if key not in _SOLVER:
-        from . import model, shapes
+        from . import model, shapes, parametric
         parts = {p.name: p for p in model.build_parts() if p.name in ("Arm_L", "Arm_R")}
+        flap_sdf = parametric.scarf_flap_sdf()     # arms pass in front of the hanging flap
         _SOLVER[key] = ArmSolver(rig, {"L": parts["Arm_L"], "R": parts["Arm_R"]},
-                                 shapes.body_sdf, shapes.head_sdf)
+                                 lambda p: np.minimum(shapes.body_sdf(p), flap_sdf(p)), shapes.head_sdf)
     return _SOLVER[key]
 
 
@@ -103,7 +104,7 @@ class _SolveCache:
         from . import model
         here = Path(__file__).resolve().parent
         h = hashlib.sha1()
-        for f in ("shapes.py", "poses.py", "sdf.py"):
+        for f in ("shapes.py", "poses.py", "sdf.py", "parametric.py"):
             h.update((here / f).read_bytes())
         h.update(repr(sorted(C.P.items())).encode())
         h.update(repr(list(C.bone_table().items())).encode())
@@ -176,7 +177,7 @@ class Lib:
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.041, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0))
+            self.arm(p, s, (sx * 0.041, -0.240, 0.302), aim=(sx * -0.20, -0.25, 1.0))   # in front of the flap
         return both_fingers(p, 85, 60)
 
     def heart(self, p=None):
@@ -190,7 +191,7 @@ class Lib:
     def paw_chest(self, p, side, low=False):
         sx = 1 if side == "L" else -1
         if low:   # resting on the belly
-            return fingers(self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2)), side, 85, 60)
+            return fingers(self.arm(p, side, (sx * 0.110, -0.230, 0.208), aim=(sx * -0.55, -0.45, 0.2)), side, 85, 60)
         return fingers(self.arm(p, side, (sx * 0.055, -0.218, 0.298), aim=(sx * -0.30, -0.30, 1.0)), side, 85, 60)
 
     def wave_up(self, p, side="L", swing=0.0):
@@ -290,47 +291,82 @@ def _smooth(x, sigma, loop, envelope=False):
 
 
 class FlapGuard:
-    """Keeps the arms from passing through the hanging scarf flap: the flap (an oriented
-    rounded box fitted to its rest mesh) swings forward just enough to clear the arms."""
+    """Keeps the arms from cutting through the hanging scarf flap. The arm solver already rests
+    the forearms on the flap; what is left (a paw target pulling the arm in) is resolved by the
+    flap giving way: first outward over the upper arm (like ref 1, where it hangs beside the
+    clasped paws), then forward, draping over the forearm.
+    Test: posed arm vertices against the flap volume (spheres on its mid-surface), each flap bone
+    carrying its own stretch of the flap."""
+
+    ROOT = 0.10        # arm vertices this close to the shoulder pivot sit under the scarf ring
+    TOL = 0.006        # knit fabric + fuzz give a little
+    LATS = (0.0, -8.0, -16.0, -24.0, -32.0)          # armature-Y swing; negative = outward
+    FWD_MAX = 60.0
 
     def __init__(self, rig: Rig, parts):
-        from .poses import _qrot_many
-        self.rig = rig; self._rot = _qrot_many
-        flap = next(p for p in parts if p.name == "ScarfFlap")
-        V = np.asarray(flap.verts)
-        self.c = V.mean(0)
-        u, s_, vt = np.linalg.svd(V - self.c, full_matrices=False)
-        self.axes = vt                                   # rows: principal axes
-        loc = (V - self.c) @ vt.T
-        self.half = np.abs(loc).max(0)
-        self.arms = {s: Skin(rig, [next(p for p in parts if p.name == f"Arm_{s}")], stride=6) for s in ("L", "R")}
+        from scipy.spatial import cKDTree
+        from .parametric import scarf_flap_spheres, FLAP_HT
+        self.rig = rig; self.ht = FLAP_HT
+        pts, vp = scarf_flap_spheres()
+        own2 = vp > 0.55                               # scarf_flap_weights: 50/50 at v = 0.55
+        self.trees = {"scarfFlap_1": cKDTree(pts[~own2]), "scarfFlap_2": cKDTree(pts[own2])}
+        byname = {p.name: p for p in parts}
+        self.arms = Skin(rig, [byname["Arm_L"], byname["Arm_R"]], stride=2)
 
-    def depth(self, pose):
+    @staticmethod
+    def apply(pose, lat, fwd):
+        if lat:
+            pose.add("scarfFlap_1", y=float(lat))
+        if fwd:
+            pose.add("scarfFlap_1", x=-float(fwd) * 0.75)
+            pose.add("scarfFlap_2", x=-float(fwd) * 0.25)
+        return pose
+
+    def _arm_points(self, pose):
         Qw, Hw = self.rig.fk(pose)
-        b = "scarfFlap_1"
-        worst = 0.0
-        for sk in self.arms.values():
-            P = sk.deform(pose)
-            q = self._rot(np.array([Qw[b][0], -Qw[b][1], -Qw[b][2], -Qw[b][3]]), P - Hw[b]) + self.rig.head[b]
-            loc = (q - self.c) @ self.axes.T
-            r = 0.006
-            d = np.abs(loc) - (self.half + 0.004 - r)          # a little inflated: fabric + arm fuzz
-            sdf = np.linalg.norm(np.maximum(d, 0), axis=1) + np.minimum(d.max(1), 0) - r
-            worst = max(worst, float(np.maximum(-sdf, 0).max()))
-        return worst
+        P = self.arms.deform(pose)
+        keep = (np.linalg.norm(P - Hw["upperArm_L"], axis=1) > self.ROOT) & \
+               (np.linalg.norm(P - Hw["upperArm_R"], axis=1) > self.ROOT)
+        return P[keep]
 
-    def swing_needed(self, pose, tol=0.0):
-        if self.depth(pose) <= tol:
-            return 0.0
-        lo, hi = 0.0, 85.0
-        for _ in range(10):
-            mid = 0.5 * (lo + hi)
-            q = pose.copy(); q.add("scarfFlap_1", x=-mid)
-            if self.depth(q) <= tol:
-                hi = mid
+    def depth(self, pose, P=None):
+        from .poses import _qrot_many
+        P = self._arm_points(pose) if P is None else P
+        Qw, Hw = self.rig.fk(pose)
+        worst = 0.0
+        for b, tree in self.trees.items():
+            q = Qw[b]
+            local = _qrot_many(np.array([q[0], -q[1], -q[2], -q[3]]), P - Hw[b]) + self.rig.head[b]
+            d, _ = tree.query(local, distance_upper_bound=0.05)
+            worst = max(worst, float(np.max(self.ht - d)))
+        return max(worst, 0.0)
+
+    def swing_needed(self, pose):
+        """(lateral, forward) swing in degrees, cheapest first (outward is preferred)."""
+        P = self._arm_points(pose)                 # the arms do not move with the flap
+        test = lambda lat, fwd: self.depth(self.apply(pose.copy(), lat, fwd), P)
+        if test(0.0, 0.0) <= self.TOL:
+            return (0.0, 0.0)
+        best = None; least = None
+        for lat in self.LATS:
+            if test(lat, 0.0) <= self.TOL:
+                cand = (0.7 * abs(lat), lat, 0.0)
             else:
-                lo = mid
-        return hi
+                d_max = test(lat, self.FWD_MAX)
+                if least is None or d_max < least[0]:
+                    least = (d_max, lat)
+                if d_max > self.TOL:
+                    continue
+                lo, hi = 0.0, self.FWD_MAX
+                for _ in range(7):
+                    mid = 0.5 * (lo + hi)
+                    lo, hi = (lo, mid) if test(lat, mid) <= self.TOL else (mid, hi)
+                cand = (hi + 0.7 * abs(lat), lat, hi)
+            if best is None or cand[0] < best[0]:
+                best = cand
+        if best is None:                            # nothing clears: least-bad lateral, half swing
+            return (least[1], 0.5 * self.FWD_MAX)
+        return (best[1], best[2])
 
 
 def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin | None, flap: "FlapGuard | None" = None):
@@ -355,12 +391,12 @@ def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin
         for p, a in zip(poses, lift):
             if a > 1e-3:
                 p.add("tail_1", x=float(a))
-    if flap is not None:   # the flap drapes over the arm instead of the arm cutting through it
-        sw = _smooth([flap.swing_needed(p) for p in poses], 2.0, loop, envelope=True)
-        for p, a in zip(poses, sw):
-            if a > 1e-3:
-                p.add("scarfFlap_1", x=-float(a) * 0.75)
-                p.add("scarfFlap_2", x=-float(a) * 0.25)
+    if flap is not None:   # the flap swings aside / drapes over the arm instead of being cut
+        sw = [flap.swing_needed(p) for p in poses]
+        lat = -_smooth([-a for a, _ in sw], 2.0, loop, envelope=True)
+        fwd = _smooth([f for _, f in sw], 2.0, loop, envelope=True)
+        for p, a, f in zip(poses, lat, fwd):
+            flap.apply(p, a if abs(a) > 1e-3 else 0.0, f if f > 1e-3 else 0.0)
     return poses
 
 

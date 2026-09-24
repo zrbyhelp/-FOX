@@ -13,9 +13,9 @@ export const ARM = {
   rest: [[0, 0, 0], 0],
   chest: [[-36, -54, -10], 1],
   heart: [[-30, -66, -20], 1],
-  waveUp: [[105, 40, 10], 2],
+  waveUp: [[84, 58, 12], 2],
   present: [[60, 30, 22], 0],
-  reach: [[82, 46, 12], 2],
+  reach: [[62, 50, 16], 2],
   shrug: [[35, 70, 22], 0],
   chin: [[-10, -158, -12], 2],
   cheek: [[-16, -150, -24], 2],
@@ -128,12 +128,12 @@ def('Wave', {
     R: [[0, 'rest'], [0.5, 'chest'], [2.05, 'chest'], [2.6, 'rest']],
   },
   curves: {
-    ParamAngleZ: [[0, 0], [0.5, -7], [2.0, -5], [2.6, 0]],
+    ParamAngleZ: [[0, 0], [0.5, 4], [2.0, 3], [2.6, 0]],
     ParamAngleX: [[0, 0], [0.5, 5], [2.1, 4], [2.6, 0]],
     ParamBodyAngleZ: [[0, 0], [0.5, -2.5], [2.1, -2], [2.6, 0]],
     ParamMouthOpen: [[0, 0], [0.35, 0.75], [1.9, 0.7], [2.3, 0]],
     ParamEyeSmile: [[0, 0], [0.4, 0.25], [2.0, 0.25], [2.5, 0]],
-    ParamTailSwing: [[0, 12], [0.4, 20], [2.2, 20], [2.6, 12]],
+    ParamTailSwing: [[0, 22], [0.4, 28], [2.2, 28], [2.6, 22]],
   },
   proc(t, v) {
     waveArm(v, t, 0.45, 2.05, 'L');
@@ -150,7 +150,7 @@ def('Happy', {
   },
   curves: {
     ParamEyeSmile: [[0, 0], [0.3, 1], [2.0, 1], [2.4, 0]],
-    ParamAngleZ: [[0, 0], [0.35, 9], [0.75, -6], [1.15, 7], [1.55, -4], [1.95, 3], [2.4, 0]],
+    ParamAngleZ: [[0, 0], [0.35, 6], [0.75, -4.5], [1.15, 5], [1.55, -3], [1.95, 2], [2.4, 0]],
     ParamBodyAngleZ: [[0, 0], [0.4, 3], [0.8, -2.5], [1.2, 2.5], [1.6, -1.5], [2.4, 0]],
     ParamAngleY: [[0, 0], [0.35, 6], [2.0, 4], [2.4, 0]],
     ParamMouthOpen: [[0, 0], [0.3, 0.3], [1.9, 0.3], [2.3, 0]],
@@ -164,7 +164,7 @@ def('Happy', {
     v.ParamRootY = 0.03 * (hop(s1) + hop(s2));
     const land = (s) => Math.exp(-((s - 1) ** 2) / 0.012) + Math.exp(-(s ** 2) / 0.012);
     v.ParamSquash = 0.22 * (hop(s1) + hop(s2)) - 0.3 * Math.min(1, land(s1) + land(s2));
-    v.ParamTailSwing = 14 + env(t, 0.2, 0.5, 1.9, 2.3) * 26 * Math.sin(TAU * 3 * t);
+    v.ParamTailSwing = 22 + env(t, 0.2, 0.5, 1.9, 2.3) * 24 * Math.sin(TAU * 3 * t);
   },
 });
 
@@ -176,7 +176,7 @@ def('Heart', {
   },
   curves: {
     ParamEyeSmile: [[0, 0], [0.4, 1], [2.3, 1], [2.75, 0]],
-    ParamAngleZ: [[0, 0], [0.5, 8], [1.4, 6], [2.2, 7], [2.8, 0]],
+    ParamAngleZ: [[0, 0], [0.5, 6], [1.4, 4.5], [2.2, 5], [2.8, 0]],
     ParamBodyAngleZ: [[0, 0], [0.5, 2.5], [2.2, 2], [2.8, 0]],
     ParamAngleY: [[0, 0], [0.5, 5], [2.2, 3], [2.8, 0]],
     ParamSquash: [[0, 0], [0.45, -0.18], [0.62, 0.14], [0.85, 0], [2.8, 0]],
@@ -184,7 +184,7 @@ def('Heart', {
     ParamEarR: [[0, 0], [0.5, 10], [2.2, 10], [2.8, 0]],
   },
   proc(t, v) {
-    v.ParamTailSwing = 14 + env(t, 0.4, 0.7, 2.2, 2.6) * 18 * Math.sin(TAU * 2.2 * t);
+    v.ParamTailSwing = 22 + env(t, 0.4, 0.7, 2.2, 2.6) * 16 * Math.sin(TAU * 2.2 * t);
   },
   events: [[0.55, 'heart']],
 });
@@ -248,7 +248,7 @@ def('Shrug', {
     ParamBrowL: [[0, 0], [0.3, 1], [2.0, 1], [2.4, 0]],
     ParamBrowR: [[0, 0], [0.3, 1], [2.0, 1], [2.4, 0]],
     ParamBrowY: [[0, 0], [0.45, 0.5], [1.9, 0.4], [2.4, 0]],
-    ParamAngleZ: [[0, 0], [0.45, 9], [1.9, 7], [2.4, 0]],
+    ParamAngleZ: [[0, 0], [0.45, 6], [1.9, 5], [2.4, 0]],
     ParamAngleY: [[0, 0], [0.45, 4], [1.9, 3], [2.4, 0]],
     ParamEyeBallX: [[0, 0], [0.4, 0.5], [1.9, 0.5], [2.4, 0]],
     ParamEyeBallY: [[0, 0], [0.4, 0.4], [1.9, 0.4], [2.4, 0]],
@@ -275,7 +275,7 @@ def('Jump', {
     const t0 = 0.22;
     const t1 = 0.92;
     const s = (t - t0) / (t1 - t0);
-    v.ParamRootY = 0.2 * hop(s);
+    v.ParamRootY = 0.13 * hop(s);
     // anticipation squash, launch stretch, landing squash, settle
     const pre = Math.exp(-((t - 0.17) ** 2) / 0.004);
     const land = Math.exp(-((t - 0.97) ** 2) / 0.004);
@@ -294,7 +294,7 @@ def('LookBack', {
     ParamAngleZ: [[0, 0], [0.5, -6], [2.0, -5], [2.7, 0]],
     ParamEyeBallX: [[0, 0], [0.4, 1], [2.1, 1], [2.7, 0]],
     ParamEyeBallY: [[0, 0], [0.4, -0.5], [2.1, -0.5], [2.7, 0]],
-    ParamTailSwing: [[0, 12], [0.45, 52], [0.85, -6], [1.25, 48], [1.65, 2], [2.05, 36], [2.7, 12]],
+    ParamTailSwing: [[0, 22], [0.45, 55], [0.85, 0], [1.25, 50], [1.65, 8], [2.05, 40], [2.7, 22]],
     ParamEyeSmile: [[0, 0], [1.2, 0], [1.6, 0.6], [2.2, 0.6], [2.7, 0]],
   },
 });
@@ -307,13 +307,13 @@ def('Pet', {
   },
   curves: {
     ParamEyeSmile: [[0, 1], [3.2, 1]],
-    ParamEarL: [[0, 24], [3.2, 24]],
-    ParamEarR: [[0, 24], [3.2, 24]],
+    ParamEarL: [[0, 15], [3.2, 15]],
+    ParamEarR: [[0, 15], [3.2, 15]],
     ParamMouthOpen: [[0, 0.15], [3.2, 0.15]],
     ParamAngleY: [[0, -4], [3.2, -4]],
   },
   proc(t, v) {
-    v.ParamTailSwing = 16 + 30 * Math.sin(TAU * 3.2 * t);
+    v.ParamTailSwing = 22 + 26 * Math.sin(TAU * 3.2 * t);
     v.ParamAngleZ = 6 * Math.sin((TAU * t) / 1.6);
     v.ParamBodyAngleZ = 2.5 * Math.sin((TAU * t) / 1.6 - 0.5);
     v.ParamSquash = -0.06 + 0.05 * Math.sin((TAU * t) / 0.8);
@@ -328,7 +328,7 @@ def('SitDown', {
     ParamSit: [[0, 0], [0.8, 1], [1.0, 1]],
     ParamSquash: [[0, 0], [0.3, -0.12], [0.75, -0.18], [1.0, 0]],
     ParamAngleY: [[0, 0], [0.5, -6], [1.0, 0]],
-    ParamTailSwing: [[0, 12], [0.8, 34], [1.0, 34]],
+    ParamTailSwing: [[0, 22], [0.8, 36], [1.0, 36]],
   },
   arms: {
     L: [[0, 'rest'], [0.5, 'crouch'], [1.0, 'rest']],
@@ -337,12 +337,12 @@ def('SitDown', {
 });
 
 def('StandUp', {
-  duration: 0.9, fadeIn: 0.25, fadeOut: 0.4, interruptible: false, priority: 2,
+  duration: 0.9, fadeIn: 0.4, fadeOut: 0.4, interruptible: false, priority: 2,
   curves: {
     ParamSit: [[0, 1], [0.7, 0]],
     ParamSquash: [[0, 0], [0.3, -0.1], [0.6, 0.12], [0.9, 0]],
     ParamAngleY: [[0, 0], [0.3, 6], [0.9, 0]],
-    ParamTailSwing: [[0, 34], [0.7, 12]],
+    ParamTailSwing: [[0, 36], [0.7, 22]],
     ParamEyeLOpen: [[0, 1], [0.9, 1]],
     ParamEyeROpen: [[0, 1], [0.9, 1]],
   },
@@ -361,11 +361,11 @@ def('Sit_Think', {
   curves: {
     ParamSit: [[0, 1], [6, 1]],
     ParamBrowL: [[0, 1], [6, 1]],
-    ParamTailSwing: [[0, 34], [6, 34]],
+    ParamTailSwing: [[0, 36], [6, 36]],
   },
   proc(t, v) {
     const ph = (TAU * t) / 6;
-    v.ParamAngleZ = 7 + 2 * Math.sin(ph);
+    v.ParamAngleZ = 5 + 1.5 * Math.sin(ph);
     v.ParamAngleX = -6 + 5 * Math.sin(ph + 0.8);
     v.ParamAngleY = 7 + 2 * Math.sin(ph * 2);
     v.ParamEyeBallX = 0.45 * Math.sin(ph + 0.3);
@@ -394,7 +394,7 @@ def('Sit_Doze', {
     const ph = (TAU * t) / 5;
     v.ParamBreath = 0.5 + 0.5 * Math.sin(ph);
     v.ParamAngleY = -15 + 3 * Math.sin(ph - 0.6);
-    v.ParamAngleZ = 9 + 2 * Math.sin(ph);
+    v.ParamAngleZ = 6 + 1.5 * Math.sin(ph);
     v.ParamAngleX = -4;
     v.ParamBodyAngleZ = 1.5 * Math.sin(ph);
     v.ParamMouthOpen = 0.08 + 0.06 * Math.sin(ph);
@@ -421,7 +421,7 @@ def('Enter', {
   proc(t, v) {
     hops(v, t, 0, 1.5, ENTER_X, 0, 4, 0.055);
     waveArm(v, t, 1.95, 2.65, 'L', 2.8);
-    v.ParamTailSwing = 12 + 10 * Math.sin(TAU * 2 * t);
+    v.ParamTailSwing = 22 + 10 * Math.sin(TAU * 2 * t);
   },
 });
 
@@ -441,7 +441,7 @@ def('Exit', {
   proc(t, v) {
     waveArm(v, t, 0.4, 1.1, 'L', 2.8);
     hops(v, t, 1.45, 2.9, 0, ENTER_X, 4, 0.055);
-    v.ParamTailSwing = 12 + 10 * Math.sin(TAU * 2 * t);
+    v.ParamTailSwing = 22 + 10 * Math.sin(TAU * 2 * t);
   },
 });
 
@@ -476,11 +476,12 @@ export function applyIdle(t, p, k = 1) {
   const s = (period, phase = 0) => Math.sin((TAU * t) / period + phase);
   p.ParamBreath = 0.5 + 0.5 * s(3.4);
   p.ParamBodyAngleZ = 1.3 * s(6.1) * k;
-  p.ParamBodyAngleX = 1.2 * s(7.3, 1) * k;
-  p.ParamAngleZ = 2.2 * s(5.3, 0.5) * k;
-  p.ParamAngleX = 3 * s(8.9) * k;
+  // a slight turn towards the logo (screen left), like the 3D ref34 framing
+  p.ParamBodyAngleX = -1.5 + 1.2 * s(7.3, 1) * k;
+  p.ParamAngleZ = 1.5 + 2.2 * s(5.3, 0.5) * k;
+  p.ParamAngleX = -5 + 3 * s(8.9) * k;
   p.ParamAngleY = 2 * s(6.7, 2) * k;
-  p.ParamTailSwing = 14 + 9 * s(3.1, 0.4) * k + 4 * s(1.9) * k;
+  p.ParamTailSwing = 27 + 8 * s(3.1, 0.4) * k + 4 * s(1.9) * k;
   p.ParamArmLA = 2.5 * s(3.4, 0.4) * k;
   p.ParamArmRA = 2.5 * s(3.4, 0.7) * k;
   p.ParamArmLB = 2 * s(3.4, 1.2) * k;

@@ -37,7 +37,7 @@ const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle tra
 
 // Typing fallback (no Type clip): lift the forearms towards the keyboard and tap.
 const ARM_LIFT = { upperArm: -16 * DEG, forearm: -34 * DEG, paw: 14 * DEG };
-const TAP = { forearm: 16 * DEG, paw: -10 * DEG };
+const TAP = { forearm: 22 * DEG, paw: -12 * DEG };
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -238,7 +238,7 @@ export class Procedural {
   }
 
   reset() {
-    for (const r of this.rest) r.captured = false;
+    this.restore(); // never leave offsets on bones the mixer might not rewrite
     this.acc = 0;
     this.prev = null;
     for (const s of [...this.ears.L, ...this.ears.R, this.flap.swing, this.flap.side, this.nodSpring, this.taps.L, this.taps.R]) s.reset();
@@ -270,7 +270,7 @@ export class Procedural {
   /** Tap one paw down (typing fallback only). */
   tapPaw(side) {
     const s = this.taps[side];
-    if (s) s.v += 11;
+    if (s) s.v += 20;
   }
 
   update(dt, layers) {

@@ -143,9 +143,15 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
   settings.setAttribute('aria-label', '设置');
 
   const parts = [];
-  groups.forEach((g) => parts.push(g, el('span', { className: 'sep', ariaHidden: 'true' })));
+  const sep = () => {
+    const x = el('span', { className: 'sep' });
+    x.setAttribute('aria-hidden', 'true');
+    return x;
+  };
+  groups.forEach((g) => parts.push(g, sep()));
   parts.push(settings);
-  const bar = el('div', { className: 'toolbar', role: 'toolbar', ariaLabel: '小狐狸动作' }, parts);
+  const bar = el('div', { className: 'toolbar' }, parts);
+  bar.setAttribute('role', 'toolbar');
   bar.setAttribute('aria-label', '小狐狸动作');
   const hint = el('p', { className: 'hint', textContent: '拖动旋转视角 · 点我互动 · 拖拖尾巴 · 敲键盘一起打字' });
   const dock = el('div', { className: 'dock' }, [hint, el('div', { className: 'bar-wrap' }, [bar])]);

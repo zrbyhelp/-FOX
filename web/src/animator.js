@@ -20,6 +20,7 @@ const FALLBACK = {
 
 const FADE = 0.3;
 const FADE_IDLE = 0.35;
+const FADE_PET = 0.45;
 export const POP_IN = 0.8; // s, fallback entrance (scale pop)
 export const FADE_OUT = 0.6; // s, fallback exit (scale down)
 
@@ -217,7 +218,7 @@ export class Animator {
    * Play a one-shot clip (Wave, Happy, ...). While sitting the fox first stands up and then
    * plays `name`. Returns the clip actually used (after fallback) or null.
    */
-  request(name) {
+  request(name, fade = FADE) {
     if (this.posing) return null;
     switch (name) {
       case 'Enter': return this.enter();
@@ -244,7 +245,7 @@ export class Animator {
     }
     this.queued = null;
     this.stateName = 'OneShot';
-    this.play(clip, FADE, name);
+    this.play(clip, fade, name);
     return clip;
   }
 
@@ -317,15 +318,15 @@ export class Animator {
     if (this.stateName === 'Petting') return true;
     this.stateName = 'Petting';
     this.queued = null;
-    if (this.has('Pet')) this.play('Pet', 0.25);
+    if (this.has('Pet')) this.play('Pet', FADE_PET); // the Pet wag is fast: blend in and out slowly
     return true;
   }
 
   endPet() {
     if (this.stateName !== 'Petting') return null;
     this.stateName = 'Idle';
-    const clip = this.request('Heart');
-    if (!clip) this.settle();
+    const clip = this.request('Heart', FADE_PET);
+    if (!clip) this.settle(FADE_PET);
     return clip;
   }
 

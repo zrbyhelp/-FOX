@@ -11,7 +11,9 @@ const ALPHA_DOWN = 4; // hit-test alpha maps are stored at 1/4 resolution
 const MARGIN_PX = 16;
 
 // Content kept in view (model units): the fox with some tail swing room + the logo on its right.
-export const CONTENT_BOX = { x0: -0.84, x1: 0.46, y0: -0.07, y1: 1.05 };
+export const CONTENT_BOX = { x0: -0.84, x1: 0.46, y0: -0.07, y1: 1.08 };
+// Portrait screens: the logo floats up-left above the head instead (see app.js layout()).
+export const CONTENT_BOX_PORTRAIT = { x0: -0.56, x1: 0.46, y0: -0.07, y1: 1.33 };
 
 // ---- shaders --------------------------------------------------------------------------------
 
@@ -27,8 +29,10 @@ void main() {
 
 // Texels are premultiplied on upload (texture.premultiplyAlpha) and blended with
 // ONE / ONE_MINUS_SRC_ALPHA, so mip levels and filtered edges never pick up dark fringes.
-// uPart: 0 = whole layer, 1 = only where aLower < 0.5, 2 = only where aLower >= 0.5 (arms are
-// split at the elbow so the forearm can change draw order, like a Live2D draw-order parameter).
+// uPart: 0 = whole layer, 1 = back part (aLower < 0.9), 2 = front part, faded in over
+// aLower 0.1..0.9. Arms are split so most of the arm can change draw order (like a Live2D
+// draw-order parameter); the back part fully covers the feather zone, so over the arm itself the
+// seam is invisible and over the scarf the arm softly emerges instead of showing a hard cut.
 const LAYER_FRAG = /* glsl */ `
 uniform sampler2D map;
 uniform float opacity;
@@ -37,13 +41,18 @@ uniform vec3 uAdd;
 varying vec2 vUv;
 varying float vLower;
 void main() {
+  float f = 1.0;
   if (uPart > 0.5) {
-    float lower = step(0.5, vLower);
-    if (uPart < 1.5 ? lower > 0.5 : lower < 0.5) discard;
+    if (uPart < 1.5) {
+      if (vLower > 0.9) discard;
+    } else {
+      f = smoothstep(0.1, 0.9, vLower);
+      if (f <= 0.0) discard;
+    }
   }
   vec4 c = texture2D(map, vUv);
   c.rgb += uAdd * c.a;
-  gl_FragColor = c * opacity;
+  gl_FragColor = c * (opacity * f);
 }`;
 
 // Same radial gradient as the 3D page's CSS background (style.css), computed in sRGB like CSS,
@@ -161,6 +170,68 @@ async function fetchJSON(url) {
   return res.json();
 }
 
+// Load-time alpha cleanup: the Head layer's crown carries thin jagged "teeth" where the ear
+// meshes intersected the head in the 3D render; they show over the ears as soon as the ears move.
+// A grayscale morphological opening of the alpha (in the top band only) removes them.
+const ALPHA_CLEANUP = { // from = fraction of the height (bottom -> top) where the cleanup starts
+  Head: { from: 0.55, radius: 4 },
+  Ear_L: { from: 0, radius: 5 },
+  Ear_R: { from: 0, radius: 5 },
+};
+
+function minMax1D(src, dst, n, stride, count, step, r, useMax) {
+  // sliding min/max over [i - r, i + r] along lines of length n
+  for (let line = 0; line < count; line++) {
+    const o = line * step;
+    for (let i = 0; i < n; i++) {
+      let v = useMax ? 0 : 255;
+      const a = Math.max(0, i - r);
+      const b = Math.min(n - 1, i + r);
+      for (let k = a; k <= b; k++) {
+        const x = src[o + k * stride];
+        if (useMax ? x > v : x < v) v = x;
+      }
+      dst[o + i * stride] = v;
+    }
+  }
+}
+
+function cleanAlpha(img, { from, radius }) {
+  const w = img.naturalWidth;
+  const h = img.naturalHeight;
+  const cv = document.createElement('canvas');
+  cv.width = w;
+  cv.height = h;
+  const ctx = cv.getContext('2d', { willReadFrequently: true });
+  ctx.drawImage(img, 0, 0);
+  const id = ctx.getImageData(0, 0, w, h);
+  const d = id.data;
+  const rows = Math.round(h * (1 - from)) + radius * 2; // image rows run top -> bottom
+  const H = Math.min(h, rows);
+  const a = new Uint8Array(w * H);
+  for (let i = 0; i < w * H; i++) a[i] = d[i * 4 + 3];
+  const t = new Uint8Array(w * H);
+  // erode (min) then dilate (max), separable
+  minMax1D(a, t, w, 1, H, w, radius, false);
+  minMax1D(t, a, H, w, w, 1, radius, false);
+  minMax1D(a, t, w, 1, H, w, radius, true);
+  minMax1D(t, a, H, w, w, 1, radius, true);
+  const keep = Math.round(h * (1 - from)); // below this row: untouched (blend over the margin)
+  for (let y = 0; y < H; y++) {
+    const blend = y < keep ? 1 : Math.max(0, 1 - (y - keep) / (2 * radius));
+    for (let x = 0; x < w; x++) {
+      const i = y * w + x;
+      const o = d[i * 4 + 3];
+      const v = Math.min(o, a[i]);
+      d[i * 4 + 3] = Math.round(o + (v - o) * blend);
+    }
+  }
+  ctx.putImageData(id, 0, 0);
+  cv.naturalWidth = w; // alphaMapOf / makeTexture treat it like the image
+  cv.naturalHeight = h;
+  return cv;
+}
+
 function alphaMapOf(img) {
   const w = Math.max(1, Math.ceil(img.naturalWidth / ALPHA_DOWN));
   const h = Math.max(1, Math.ceil(img.naturalHeight / ALPHA_DOWN));
@@ -271,9 +342,9 @@ export class Puppet {
       this.track(bgGeo, bgMat);
     }
 
-    this.shadow = makeShadow(undefined, 0.26);
+    this.shadow = makeShadow(undefined, 0.36);
     this.shadow.renderOrder = -900;
-    this.logoShadow = makeShadow(undefined, 0.12);
+    this.logoShadow = makeShadow(undefined, 0.09);
     this.logoShadow.renderOrder = -899;
     this.scene.add(this.shadow, this.logoShadow);
     this.track(this.shadow.geometry, this.shadow.material, this.logoShadow.geometry, this.logoShadow.material);
@@ -298,7 +369,7 @@ export class Puppet {
     const images = await Promise.all(names.map((n) => loadImage(this.base + defs[n].file)));
     names.forEach((name, i) => {
       const def = defs[name];
-      const img = images[i];
+      const img = ALPHA_CLEANUP[name] ? cleanAlpha(images[i], ALPHA_CLEANUP[name]) : images[i];
       const alpha = alphaMapOf(img);
       const grid = buildGrid(def, alpha);
       const tex = makeTexture(img, this.anisotropy);
@@ -382,6 +453,12 @@ export class Puppet {
   setInsetBottom(px) {
     this.insetBottom = Math.max(0, px || 0);
     this.resize();
+  }
+
+  /** Usable aspect ratio (width / height above the inset). */
+  aspect() {
+    const { w, h } = this.size();
+    return (w - 2 * MARGIN_PX) / Math.max(1, h - 2 * MARGIN_PX - this.insetBottom);
   }
 
   /** Fit the content box into the canvas (16 px margin, above the bottom inset). */

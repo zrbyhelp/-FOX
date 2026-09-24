@@ -168,6 +168,7 @@ async function main() {
     const away = animator.state === 'Away';
     interaction.paused = away;
     procedural.paused = away;
+    keyboard.setViewer(camera);
     typing.update(dt);
     interaction.update(dt);
     procedural.talk = bubble.talking;

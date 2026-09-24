@@ -31,7 +31,23 @@ export class Interaction {
       bone.add(m);
       this.colliders[part] = m;
     }
-    this.pickables = [...Object.values(this.colliders), logo.proxy];
+    // The tail is long and curls behind the body: besides spec's collider (on tail_3), cover the
+    // rest of the chain so whatever part of the tail is visible can be clicked, hovered, dragged.
+    this.tailColliders = [];
+    for (const [name, r] of [['tail_6', 0.085], ['tail_5', 0.1], ['tail_4', 0.11], ['tail_2', 0.1]]) {
+      const bone = fox.bones[name];
+      const child = bone?.children.find((c) => c.isBone);
+      if (!bone || !spec.colliders.tail) continue;
+      const m = new THREE.Mesh(new THREE.SphereGeometry(r, 12, 8), new THREE.MeshBasicMaterial({ visible: false }));
+      m.name = `collider_tail_${name}`;
+      m.userData.part = 'tail';
+      m.position.set(0, (child ? child.position.length() : 0.1) * 0.5, 0); // middle of the link
+      m.layers.set(PICK_LAYER);
+      bone.add(m);
+      this.tailColliders.push(m);
+    }
+    if (this.colliders.tail) this.tailColliders.push(this.colliders.tail);
+    this.pickables = [...Object.values(this.colliders), ...this.tailColliders.filter((m) => m !== this.colliders.tail), logo.proxy];
 
     this.pointer = null; // last pointer {x, y, type} in client px
     this.pointerAt = -Infinity; // time of last pointer movement (s)

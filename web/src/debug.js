@@ -82,9 +82,9 @@ export function installDebug(app) {
       rng.seed(seed);
       interaction.cancelPending();
       app.finishIntro();
-      animator.pose(clip, t);
-      procedural.reset();
+      procedural.reset(); // back to the clip pose before switching clips
       procedural.enabled = false;
+      animator.pose(clip, t);
       logo.pose(logoState);
       app.dozeFx.clear();
       stage.setView(cam, { fit: false }); // exact spec camera for reference comparisons
@@ -106,11 +106,20 @@ export function installDebug(app) {
     /** CSS-pixel position of a collider, bone or logo piece (for Playwright clicks). */
     screenPos(part) {
       fox.root.updateMatrixWorld(true);
-      const p = worldOf(part);
-      if (!p) return null;
-      p.project(stage.camera);
       const r = stage.renderer.domElement.getBoundingClientRect();
-      return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+      const toScreen = (p) => {
+        p.project(stage.camera);
+        return { x: r.left + ((p.x + 1) / 2) * r.width, y: r.top + ((1 - p.y) / 2) * r.height };
+      };
+      if (part === 'tail') {
+        // the tail proxy that is actually visible (not behind the body) from this camera
+        for (const c of interaction.tailColliders) {
+          const s = toScreen(c.getWorldPosition(v));
+          if (interaction.pick(s.x, s.y) === 'tail') return s;
+        }
+      }
+      const p = worldOf(part);
+      return p ? toScreen(p) : null;
     },
 
     /** Allow bigger per-frame steps so slow software rendering still runs at wall-clock speed. */

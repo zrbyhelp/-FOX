@@ -157,13 +157,13 @@ class Glyphs {
     return tex;
   }
 
-  spawn(ch, pos, rng) {
+  spawn(ch, pos, rng, toward) {
     const s = this.pool.find((p) => p.userData.life < 0) || this.pool.reduce((a, b) => (a.userData.life > b.userData.life ? a : b));
     s.material.map = this.texture(ch);
     s.material.needsUpdate = true;
-    s.position.copy(pos);
+    s.position.copy(pos).addScaledVector(toward, 0.06); // in front of the paws
     s.userData.life = 0;
-    s.userData.vel.set((rng() - 0.5) * 0.05, 0.16 + rng() * 0.05, 0.05);
+    s.userData.vel.set((rng() - 0.5) * 0.06, 0.17 + rng() * 0.05, 0).addScaledVector(toward, 0.04);
     s.visible = true;
   }
 
@@ -176,7 +176,7 @@ class Glyphs {
       s.position.addScaledVector(u.vel, dt);
       u.vel.multiplyScalar(Math.exp(-1.5 * dt));
       const l = u.life;
-      const sc = 0.034 * Math.min(1, l * 6) * (1 - 0.3 * l);
+      const sc = 0.05 * Math.min(1, l * 6) * (1 - 0.3 * l);
       s.scale.set(sc, sc, sc);
       s.material.opacity = Math.min(1, (1 - l) * 2.5);
     }
@@ -232,6 +232,7 @@ export class MagicKeyboard {
     this.shadow.scale.z = D / W + 0.35;
     this.sparkles = new Sparkles(scene);
     this.glyphs = new Glyphs(scene);
+    this.viewDir = new THREE.Vector3(0, 0, 1);
 
     scene.add(this.group, this.shadow);
     this.mode = 'hidden'; // hidden | in | shown | out
@@ -348,7 +349,7 @@ export class MagicKeyboard {
       const p = this.body.localToWorld(k.pos.clone());
       p.y += 0.012;
       const ch = glyphFor(code);
-      if (ch) this.glyphs.spawn(ch, p, this.rng);
+      if (ch) this.glyphs.spawn(ch, p, this.rng, this.viewDir);
       else this.sparkles.spawn(p, new THREE.Vector3((this.rng() - 0.5) * 0.08, 0.12 + this.rng() * 0.06, 0.03), { size: 0.014, dur: 0.6, rng: this.rng });
     }
     return k.pos.x >= 0 ? 'L' : 'R';
@@ -361,6 +362,20 @@ export class MagicKeyboard {
 
   releaseAll() {
     for (const k of this.keys) k.held = false;
+  }
+
+  /** All keycaps back up, original colours. */
+  resetCaps() {
+    for (const k of this.keys) {
+      k.press = 0;
+      k.downUntil = 0;
+      k.mesh.setMatrixAt(k.index, this._m.makeTranslation(k.pos));
+      k.mesh.setColorAt(k.index, k.color);
+    }
+    for (const m of this.capMeshes) {
+      m.instanceMatrix.needsUpdate = true;
+      m.instanceColor.needsUpdate = true;
+    }
   }
 
   /** Keys currently (visibly) pressed. */
@@ -383,6 +398,11 @@ export class MagicKeyboard {
     }
   }
 
+  /** Horizontal direction from the keyboard towards the camera (glyphs float that way). */
+  setViewer(camera) {
+    this.viewDir.set(camera.position.x - this.home.x, 0, camera.position.z - this.home.z).normalize();
+  }
+
   update(dt) {
     this.time += dt;
     this.sparkles.update(dt);
@@ -401,7 +421,7 @@ export class MagicKeyboard {
         this.mode = 'hidden';
         this.group.visible = this.shadow.visible = false;
         this.releaseAll();
-        for (const k of this.keys) k.press = 0;
+        this.resetCaps();
         this.scale = 0;
         return;
       }
