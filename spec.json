@@ -225,13 +225,13 @@
     }
   ],
   "expressions": {
-    "_comment": "Expression control bones all point straight up (Blender +Z) with roll 0, so bone-local Y == world vertical and bone-local Z == depth (towards the face front). Hidden = local scale (1, 0.001, 0.001): the feature collapses vertically AND sinks back to its pivot, which sits 3-5 mm INSIDE the head surface, so nothing is rasterised. Visible = (1,1,1). Never use exact 0. Blink multiplies eyeOpen_* scale.y.",
+    "_comment": "Expression control bones point straight up (Blender +Z), roll 0. Hidden = uniform local scale 0.001 (the feature shrinks to its pivot, which sits a few mm INSIDE the head surface, so nothing is rasterised; a one-axis collapse leaves slivers poking out of the curved face). Visible = (1,1,1). Never use exact 0. Blink multiplies eyeOpen_* scale.y only (the eye flattens into a closed-eye line).",
     "hiddenScale": [
-      1.0,
+      0.001,
       0.001,
       0.001
     ],
-    "collapseAxis": "y",
+    "collapseAxis": "xyz",
     "defaultVisible": [
       "eyeOpen_L",
       "eyeOpen_R",
@@ -412,9 +412,9 @@
     "_comment": "glTF/three space. ref34 approximates the reference renders (fox turned ~25deg to viewer's left).",
     "ref34": {
       "position": [
-        0.95,
-        0.62,
-        2.35
+        1.12,
+        0.64,
+        2.7
       ],
       "target": [
         -0.18,

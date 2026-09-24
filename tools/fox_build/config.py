@@ -72,14 +72,14 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.165, 0.01, 0.775),
-    "ear_tip": (0.300, 0.03, 1.000),
-    "ear_base_width": 0.20,
-    "ear_thickness": 0.065,
+    "ear_base": (0.170, 0.012, 0.790),
+    "ear_tip": (0.330, 0.040, 0.955),
+    "ear_base_width": 0.290,
+    "ear_thickness": 0.072,
     # face anchors (x, z); y is projected onto the head surface at build time
-    "eye_xz": (0.105, 0.600),
-    "eye_size": (0.050, 0.062),               # width, height of the open eye
-    "brow_xz": (0.108, 0.668),
+    "eye_xz": (0.110, 0.597),
+    "eye_size": (0.060, 0.076),               # width, height of the open eye
+    "brow_xz": (0.112, 0.672),
     "nose_xz": (0.0, 0.567),
     "mouth_xz": (0.0, 0.535),
     "blush_xz": (0.165, 0.545),
@@ -90,30 +90,30 @@ P = {
     "body_widest_z": 0.20,
     "body_top_radius": (0.115, 0.105),
     # neck / scarf
-    "scarf_z": 0.425,
+    "scarf_z": 0.405,
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
-    "scarf_tube_radius": (0.034, 0.030),     # vertical, radial half-thickness
+    "scarf_tube_radius": (0.044, 0.040),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.050,
-    "paw_radius": 0.056,
-    "leg_radius": 0.056,
-    "foot_size": (0.115, 0.145, 0.075),      # x width, y length, z height
+    "arm_radius": 0.057,
+    "paw_radius": 0.064,
+    "leg_radius": 0.066,
+    "foot_size": (0.126, 0.158, 0.080),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
-    "tail_radius_profile": [(0.0, 0.050), (0.12, 0.085), (0.42, 0.128), (0.68, 0.115),
-                            (0.88, 0.070), (0.97, 0.030), (1.0, 0.0)],
+    "tail_radius_profile": [(0.0, 0.055), (0.12, 0.095), (0.42, 0.140), (0.68, 0.126),
+                            (0.88, 0.078), (0.97, 0.034), (1.0, 0.0)],
     "tail_flatten": 0.88,                    # cross-section squash (lateral)
     "tail_orange_from": 0.72,                # t where the orange tip gradient starts
 }
 
 # Tail centre-line (cubic Catmull-Rom through these points). Root sits inside the butt on
-# the mid-line; the tail sweeps back (+Y), then up, leaning ~30deg to the fox's LEFT (+X),
+# the mid-line; the tail sweeps back (+Y), then up, leaning ~40deg to the fox's LEFT (+X),
 # tip curling slightly forward. Centre-line length ~0.66 (~ +15% vs the reference art).
 TAIL_SPLINE = [
     (0.000, 0.110, 0.160),
-    (0.045, 0.255, 0.140),
-    (0.150, 0.355, 0.270),
-    (0.215, 0.360, 0.435),
-    (0.240, 0.300, 0.565),
+    (0.060, 0.250, 0.140),
+    (0.185, 0.335, 0.270),
+    (0.262, 0.335, 0.440),
+    (0.285, 0.272, 0.568),
 ]
 
 # --------------------------------------------------------------------------------------
@@ -161,19 +161,19 @@ def bone_table() -> dict:
     b["mouthSmile"] = ("head", (mx, -0.215, mz), (mx, -0.215, mz + 0.04))
     b["mouthOpen"] = ("head", (mx, -0.215, mz), (mx, -0.215, mz + 0.04))
     for s, sx in (("L", 1), ("R", -1)):
-        sh = (sx * 0.055, -0.01, 0.395)
-        up = (sx * 0.130, -0.01, 0.388)
+        sh = (sx * 0.050, -0.040, 0.382)
+        up = (sx * 0.118, -0.045, 0.372)
         d = (sx * _ARM_DIR[0], _ARM_DIR[1], _ARM_DIR[2])
-        el = _along(up, d, 0.090)
-        wr = _along(el, d, 0.075)
-        tip = _along(wr, d, 0.060)
+        el = _along(up, d, 0.095)
+        wr = _along(el, d, 0.080)
+        tip = _along(wr, d, 0.062)
         b[f"shoulder_{s}"] = ("chest", sh, up)
         b[f"upperArm_{s}"] = (f"shoulder_{s}", up, el)
         b[f"forearm_{s}"] = (f"upperArm_{s}", el, wr)
         b[f"paw_{s}"] = (f"forearm_{s}", wr, tip)
-    b["scarf"] = ("chest", (0, 0.0, 0.425), (0, 0.0, 0.465))
-    b["scarfFlap_1"] = ("scarf", (0.075, -0.118, 0.405), (0.083, -0.142, 0.325))
-    b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.142, 0.325), (0.088, -0.150, 0.245))
+    b["scarf"] = ("chest", (0, 0.0, 0.405), (0, 0.0, 0.445))
+    b["scarfFlap_1"] = ("scarf", (0.075, -0.125, 0.385), (0.083, -0.148, 0.31))
+    b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.148, 0.31), (0.09, -0.155, 0.235))
     for s, sx in (("L", 1), ("R", -1)):
         b[f"thigh_{s}"] = ("hips", (sx * 0.078, 0.0, 0.17), (sx * 0.078, 0.0, 0.105))
         b[f"shin_{s}"] = (f"thigh_{s}", (sx * 0.078, 0.0, 0.105), (sx * 0.078, 0.0, 0.045))
@@ -196,7 +196,7 @@ CLIP_NAMES = [c["name"] for c in SPEC["clips"]]
 
 # Budgets
 BUDGET = {
-    "fox_triangles": 70_000,
+    "fox_triangles": 90_000,
     "glb_bytes_raw": 8_000_000,
     "max_influences": 4,
 }

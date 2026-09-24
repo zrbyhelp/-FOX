@@ -1,10 +1,147 @@
 {
   "Idle": {
     "loop": true,
-    "duration": 4.0
+    "duration": 4.0,
+    "priority": 0,
+    "interruptible": true,
+    "lookAt": 1.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Idle_LookAround": {
+    "loop": false,
+    "duration": 4.0,
+    "priority": 1,
+    "interruptible": true,
+    "lookAt": 0.0,
+    "blink": 1.0,
+    "springs": 1.0
   },
   "Wave": {
     "loop": false,
-    "duration": 2.0
+    "duration": 2.7,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.4,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 0.95
+  },
+  "Happy": {
+    "loop": false,
+    "duration": 2.2,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.6,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.0
+  },
+  "Heart": {
+    "loop": false,
+    "duration": 2.6,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.5,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.2
+  },
+  "Present": {
+    "loop": false,
+    "duration": 2.5,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.3,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.2,
+    "lookAtLogo": true
+  },
+  "Reach": {
+    "loop": false,
+    "duration": 2.5,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.3,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.2,
+    "lookAtLogo": true
+  },
+  "Shrug": {
+    "loop": false,
+    "duration": 2.3,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.6,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.0
+  },
+  "Sit_Think": {
+    "loop": true,
+    "duration": 4.0,
+    "priority": 1,
+    "interruptible": true,
+    "lookAt": 0.5,
+    "blink": 1.0,
+    "springs": 1.0,
+    "refTime": 1.0
+  },
+  "Sit_Doze": {
+    "loop": true,
+    "duration": 4.0,
+    "priority": 1,
+    "interruptible": true,
+    "lookAt": 0.0,
+    "blink": 0.0,
+    "springs": 1.0,
+    "refTime": 1.0
+  },
+  "SitDown": {
+    "loop": false,
+    "duration": 1.1,
+    "priority": 3,
+    "interruptible": false,
+    "lookAt": 1.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "StandUp": {
+    "loop": false,
+    "duration": 1.0,
+    "priority": 3,
+    "interruptible": false,
+    "lookAt": 1.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Jump": {
+    "loop": false,
+    "duration": 1.35,
+    "priority": 3,
+    "interruptible": true,
+    "lookAt": 0.3,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Pet": {
+    "loop": true,
+    "duration": 1.6,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "LookBack": {
+    "loop": false,
+    "duration": 2.4,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.0,
+    "blink": 1.0,
+    "springs": 1.0
   }
 }

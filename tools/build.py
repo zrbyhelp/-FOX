@@ -40,7 +40,8 @@ def build_fox(bpy, blockout: bool, save_blend: bool, out_name: str = "fox"):
     parts = model.build_parts()
     print(f"[build] parts: {len(parts)} ({time.time() - t0:.1f}s)")
 
-    arm = rig.create_armature(bpy, col, getattr(model, "BONE_TABLE", None))
+    bt = model.bone_table() if hasattr(model, "bone_table") else None
+    arm = rig.create_armature(bpy, col, bt)
     tris = 0
     for p in parts:
         assemble.create_object(bpy, p, arm, col)
@@ -48,7 +49,7 @@ def build_fox(bpy, blockout: bool, save_blend: bool, out_name: str = "fox"):
     print(f"[build] triangles: {tris}")
 
     t1 = time.time()
-    meta = clips.build_clips(bpy, arm)
+    meta = clips.build_clips(bpy, arm, parts, bt)
     anim.reset_pose(arm)
     print(f"[build] clips: {list(meta)} ({time.time() - t1:.1f}s)")
 
