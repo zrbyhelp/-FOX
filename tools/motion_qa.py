@@ -19,6 +19,9 @@ JERK_DEG = 6.0        # change of angular velocity between consecutive frames (d
 JERK_TAIL = 10.0      # fast happy tail wags are intended
 SPEED_DEG = 25.0      # angular speed per frame considered a pop
 LOC_JERK = 0.006      # translation velocity change per frame (m)
+HOP_CLIPS = {"Jump", "Enter", "Exit"}   # landings are real impacts
+LOC_JERK_HOP = 0.025
+LEG_JERK_HOP = 9.0
 
 
 def angle(a, b):
@@ -47,13 +50,15 @@ def main():
                 jerk = np.abs(np.diff(w))
                 i = int(np.argmax(jerk))
                 lim = JERK_TAIL if node.startswith("tail_") else JERK_DEG
+                if an.name in HOP_CLIPS and node.split("_")[0] in ("thigh", "shin", "foot"):
+                    lim = LEG_JERK_HOP
                 if jerk[i] > lim or w.max() > SPEED_DEG:
                     issues.append((max(jerk[i], w.max()), f"{node}.rot jerk {jerk[i]:.1f}°/f² @f{i + 1}, max speed {w.max():.1f}°/f"))
             elif ch.target.path == "translation" and node in ("root", "hips"):
                 vel = np.linalg.norm(np.diff(v, axis=0), axis=1)
                 acc = np.abs(np.diff(vel))
                 i = int(np.argmax(acc))
-                if acc[i] > LOC_JERK:
+                if acc[i] > (LOC_JERK_HOP if an.name in HOP_CLIPS else LOC_JERK):
                     issues.append((acc[i] * 1000, f"{node}.loc jerk {acc[i] * 1000:.1f}mm/f² @f{i + 1}"))
         issues.sort(reverse=True)
         ok = not issues

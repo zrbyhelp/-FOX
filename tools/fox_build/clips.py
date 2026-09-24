@@ -225,8 +225,8 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=-8, z=-30)
-        tail_curve(p, x=-3, z=-20, start=2, falloff=0.95)
+        p.set("tail_1", x=8, z=-42)
+        tail_curve(p, x=-4, z=-16, start=2, falloff=0.95)
         return p
 
     def stand_legs(self, p):
@@ -314,12 +314,12 @@ class FlapGuard:
             q = self._rot(np.array([Qw[b][0], -Qw[b][1], -Qw[b][2], -Qw[b][3]]), P - Hw[b]) + self.rig.head[b]
             loc = (q - self.c) @ self.axes.T
             r = 0.006
-            d = np.abs(loc) - (self.half - r)
+            d = np.abs(loc) - (self.half + 0.004 - r)          # a little inflated: fabric + arm fuzz
             sdf = np.linalg.norm(np.maximum(d, 0), axis=1) + np.minimum(d.max(1), 0) - r
             worst = max(worst, float(np.maximum(-sdf, 0).max()))
         return worst
 
-    def swing_needed(self, pose, tol=0.002):
+    def swing_needed(self, pose, tol=0.0):
         if self.depth(pose) <= tol:
             return 0.0
         lo, hi = 0.0, 85.0
@@ -445,8 +445,8 @@ def make_clips(rig: Rig):
 
     # Wave (ref 2)
     w0 = stand.copy()
-    w1 = L.wave_up(L.paw_chest(stand.copy(), "R"), "L")
-    w1.add("head", y=-7, z=4).add("chest", y=-3).expression(mouth="open")
+    w1 = stand.copy(); w1.add("head", y=-7, z=4).add("chest", y=-3).expression(mouth="open")
+    w1 = L.wave_up(L.paw_chest(w1, "R"), "L")
     def wave_ov(t, p):
         env = smoother((t - 0.45) / 0.3) * (1 - smoother((t - 2.15) / 0.3))
         sw = math.sin(2 * math.pi * 2.0 * (t - 0.45))
@@ -459,8 +459,8 @@ def make_clips(rig: Rig):
                       meta=dict(priority=2, lookAt=0.4, refTime=0.95)))
 
     # Happy (ref 1): clasp, ^^, sway, tiptoe bounce
-    h1 = L.clasp(stand.copy()).expression(eyes="happy")
-    h1.add("head", y=8, x=-3)
+    h1 = stand.copy().expression(eyes="happy"); h1.add("head", y=8, x=-3)
+    h1 = L.clasp(h1)
     def happy_ov(t, p):
         env = smoother(t / 0.45) * (1 - smoother((t - 1.95) / 0.45))
         p.add("head", y=-6 * env * math.sin(2 * math.pi * 0.9 * (t - 0.45)))
@@ -472,8 +472,8 @@ def make_clips(rig: Rig):
                       meta=dict(priority=2, lookAt=0.6, refTime=1.0)))
 
     # Heart (ref 7)
-    hh = L.heart(stand.copy()).expression(eyes="happy")
-    hh.add("spine", x=4).add("head", y=-8, x=4)
+    hh = stand.copy().expression(eyes="happy"); hh.add("spine", x=4).add("head", y=-8, x=4)
+    hh = L.heart(hh)
     def heart_ov(t, p):
         env = smoother((t - 0.3) / 0.35) * (1 - smoother((t - 2.2) / 0.4))
         p.add("chest", y=2.5 * env * math.sin(2 * math.pi * 1.2 * t))
@@ -483,15 +483,15 @@ def make_clips(rig: Rig):
                       meta=dict(priority=2, lookAt=0.5, refTime=1.2)))
 
     # Present (ref 3): right paw (viewer's left) palm-up toward the logo
-    pr = L.present(L.paw_chest(stand.copy(), "L"), "R")
-    pr.add("chest", z=-6).add("head", z=-12, y=-6, x=-2)
+    pr = stand.copy(); pr.add("chest", z=-6).add("head", z=-12, y=-6, x=-2)
+    pr = L.present(L.paw_chest(pr, "L"), "R")
     clips.append(Clip("Present", 2.6, [(0, stand), (0.5, pr), (2.05, pr), (2.6, stand)],
                       lambda t, p: (breathe(t, p, 0.5, 0.5), tail_sway(t, p, 0.5)),
                       meta=dict(priority=2, lookAt=0.3, refTime=1.2, lookAtLogo=True)))
 
     # Reach (ref 5): tiptoe reach up toward the logo
-    rc = L.reach(L.paw_chest(stand.copy(), "L"), "R")
-    rc.add("spine", y=-5).add("chest", y=-4, z=-6).add("neck", x=-6).add("head", z=-14, x=-8, y=-4)
+    rc = stand.copy(); rc.add("spine", y=-5).add("chest", y=-4, z=-6).add("neck", x=-6).add("head", z=-14, x=-8, y=-4)
+    rc = L.reach(L.paw_chest(rc, "L"), "R")
     rc.loc["root"] = np.array([0, 0, 0.0])
     for s in ("L", "R"):
         rc.set(f"foot_{s}", x=18)
@@ -504,18 +504,19 @@ def make_clips(rig: Rig):
                       meta=dict(priority=2, lookAt=0.3, refTime=1.2, lookAtLogo=True)))
 
     # Shrug (ref 6)
-    sh = L.shrug(stand.copy()).expression(brows="both")
-    sh.add("head", y=9, x=-3).add("neck", y=3)
+    sh = stand.copy().expression(brows="both"); sh.add("head", y=9, x=-3).add("neck", y=3)
+    sh = L.shrug(sh)
     clips.append(Clip("Shrug", 2.4, [(0, stand), (0.45, sh), (1.85, sh), (2.4, stand)],
                       lambda t, p: (breathe(t, p, 0.5, 0.5), tail_sway(t, p, 0.5)),
                       meta=dict(priority=2, lookAt=0.6, refTime=1.0)))
 
     # Sitting family (ref 4 / ref 8)
     think = L.sit()
+    think.add("neck", y=-4).add("head", y=-11, z=-8, x=3)
     L.paw_chest(think, "L", low=True)
     L.arm(think, "R", (-0.075, -0.232, 0.350), aim=(0.35, -0.35, 1.0), head_margin=-0.004)
     fingers(think, "R", 85, 60)
-    think.add("neck", y=-4).add("head", y=-11, z=-8, x=3).expression(brows="left")
+    think.expression(brows="left")
     def think_ov(t, p):
         ph = 2 * math.pi * t / 4.0
         breathe(t, p, rate=0.5, amt=0.8)
@@ -525,10 +526,11 @@ def make_clips(rig: Rig):
                       meta=dict(priority=1, lookAt=0.5, refTime=1.0)))
 
     doze = L.sit(lean=4)
+    doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
     L.arm(doze, "R", (-0.088, -0.232, 0.346), aim=(0.30, -0.30, 1.0), head_margin=-0.004)
     fingers(doze, "R", 85, 60)
-    doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5).expression(eyes="sleep")
+    doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):
         ph = 2 * math.pi * t / 4.0
@@ -555,8 +557,10 @@ def make_clips(rig: Rig):
         j_up.set(f"thigh_{s}", x=-25); j_up.set(f"shin_{s}", x=35); j_up.set(f"foot_{s}", x=10)
     j_up.expression(eyes="happy", mouth="open").add("head", x=-6)
     j_up.set("ear_L", x=-18, mirror=False); j_up.set("ear_R", x=-18)
-    tail_curve(j_up, x=18, start=2, falloff=0.9)
+    tail_curve(j_up, x=-10, start=2, falloff=0.9)
     j_land = squat.copy(); j_land.expression(eyes="happy")
+    for s, sx in (("L", 1), ("R", -1)):
+        L.arm(j_land, s, (sx * 0.265, -0.090, 0.330), aim=(sx * 1.0, -0.2, 0.3))
     T_SQ, T_TAKE, T_LAND, T_SET = 0.32, 0.36, 0.90, 1.12
     def jump_root(t):
         # squat -> take-off -> airborne arc (peak ~0.14) -> landing squash -> settle
@@ -583,7 +587,8 @@ def make_clips(rig: Rig):
                       jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
 
     # Pet (loop): leaning into the hand, eyes ^^, ears back, tail wagging
-    pet = L.clasp(stand.copy()).expression(eyes="happy")
+    pet = stand.copy().expression(eyes="happy"); pet.add("head", x=2)
+    pet = L.clasp(pet)
     pet.set("ear_L", x=-22, y=8); pet.set("ear_R", x=-22, y=-8)
     def pet_ov(t, p):
         ph = 2 * math.pi * t / 1.6
@@ -606,7 +611,7 @@ def make_clips(rig: Rig):
                       meta=dict(priority=2, lookAt=0.0)))
 
     # ---- Enter: hop in from the viewer's right (fox's left, +X), turn to the front, wave
-    wv = L.wave_up(L.paw_chest(stand.copy(), "R"), "L").expression(mouth="open")
+    wv = w1
     HOPS, T_IN, X0 = 3, 1.25, 0.95
 
     def hopping(t, p, x_from, x_to, t0, t1, yaw, ease="out"):

@@ -1,10 +1,12 @@
-// Pointer interaction: bone-attached proxy colliders, clicks, petting, logo hover/click,
-// look-at targets, and the shared trigger() used by the toolbar and the debug API.
+// Pointer interaction: bone-attached proxy colliders, clicks, petting, tail drag / hover flick,
+// logo hover/click, look-at targets, and the shared trigger() used by the toolbar and the debug API.
 import * as THREE from 'three';
 
 const PICK_LAYER = 1;
 const CLICK_DELAY = 250; // ms to wait for a possible double-click
 const PET_DISTANCE = 12; // px of pointer travel on the head before it counts as petting
+const DRAG_DISTANCE = 6; // px of pointer travel on the tail before it counts as a drag
+const TAIL_FLICK_COOLDOWN = 1; // s between hover flicks
 const POINTER_IDLE = 5; // s without pointer movement before the look-at target is dropped
 
 export class Interaction {
@@ -44,6 +46,13 @@ export class Interaction {
     this.lookVec = new THREE.Vector3();
     this.hoverDirty = false;
     this.followPointer = true; // toolbar toggle 跟随鼠标
+    this.paused = false; // fox away: only the logo reacts
+    this.typing = null; // TypingController (set by main.js)
+    this.hoverPart = null;
+    this.lastTailFlick = -Infinity;
+    this.hitPoint = new THREE.Vector3();
+    this.dragPlane = new THREE.Plane();
+    this.dragDelta = new THREE.Vector3();
 
     // Capture phase on the parent: runs before OrbitControls' own canvas listener, so a press
     // on the fox or logo never starts an orbit.
@@ -61,8 +70,9 @@ export class Interaction {
     const r = this.canvas.getBoundingClientRect();
     this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const hit = this.raycaster.intersectObjects(this.pickables, false)[0];
+    const hit = this.raycaster.intersectObjects(this.paused ? [this.logo.proxy] : this.pickables, false)[0];
     if (!hit) return null;
+    this.hitPoint.copy(hit.point);
     return hit.object === this.logo.proxy ? 'logo' : hit.object.userData.part;
   }
 
@@ -78,7 +88,7 @@ export class Interaction {
     e.preventDefault();
     this.controls.enabled = false;
     this.canvas.setPointerCapture?.(e.pointerId);
-    this.down = { part, x: e.clientX, y: e.clientY, travel: 0, id: e.pointerId, type: e.pointerType, petting: false };
+    this.down = { part, x: e.clientX, y: e.clientY, travel: 0, id: e.pointerId, type: e.pointerType, petting: false, dragging: false, grab: this.hitPoint.clone() };
   }
 
   onMove(e) {
@@ -95,6 +105,26 @@ export class Interaction {
       d.petting = this.animator.startPet();
       this.cancelPending();
     }
+    if (d.part === 'tail') {
+      if (!d.dragging && d.travel > DRAG_DISTANCE) {
+        d.dragging = true;
+        this.cancelPending();
+        this.animator.poke(false);
+        // drag on a camera-facing plane through the grabbed point
+        this.dragPlane.setFromNormalAndCoplanarPoint(this.camera.getWorldDirection(this.dragDelta), d.grab);
+        this.canvas.style.cursor = 'grabbing';
+      }
+      if (d.dragging) this.dragTail(e.clientX, e.clientY, d);
+    }
+  }
+
+  /** Bend the tail towards the pointer (displacement of the grab point on the drag plane). */
+  dragTail(x, y, d) {
+    const r = this.canvas.getBoundingClientRect();
+    this.ndc.set(((x - r.left) / r.width) * 2 - 1, -((y - r.top) / r.height) * 2 + 1);
+    this.raycaster.setFromCamera(this.ndc, this.camera);
+    const p = this.raycaster.ray.intersectPlane(this.dragPlane, this.dragDelta);
+    if (p) this.procedural.dragTail(p.sub(d.grab));
   }
 
   onUp(e, cancelled = false) {
@@ -104,6 +134,14 @@ export class Interaction {
     this.controls.enabled = true;
     if (d.petting) {
       this.animator.endPet();
+      return;
+    }
+    if (d.dragging) {
+      // let go: the tail springs back (with overshoot) and the fox looks round at it
+      this.procedural.dragTail(null);
+      this.canvas.style.cursor = '';
+      this.hoverDirty = true;
+      if (!cancelled) this.trigger('tail');
       return;
     }
     if (cancelled || d.travel > PET_DISTANCE) return;
@@ -117,6 +155,7 @@ export class Interaction {
   }
 
   clickFox(part) {
+    if (this.paused) return;
     if (this.animator.state === 'Sitting') {
       this.cancelPending();
       this.animator.poke(true); // stand up, then wave
@@ -179,6 +218,11 @@ export class Interaction {
       case 'Pet': return a.startPet() ? 'Pet' : null;
       case 'PetEnd': return a.endPet();
       case 'Wake': a.poke(false); return a.wake('Wave');
+      case 'Enter': return a.enter();
+      case 'Exit': return a.exit();
+      case 'Presence': return a.stateName === 'Away' || a.stateName === 'Exiting' ? a.enter() : a.exit();
+      case 'Type': return this.typing?.demo(3) ? 'Type' : null;
+      case 'TypeDemo': return this.typing?.toggleDemo() ? 'Type' : null;
       default: return a.request(name);
     }
   }
@@ -196,13 +240,23 @@ export class Interaction {
       const onLogo = part === 'logo';
       if (onLogo && !this.hoverLogo) this.presentLogo();
       this.hoverLogo = onLogo;
-      this.canvas.style.cursor = part ? 'pointer' : '';
+      if (part === 'tail' && this.hoverPart !== 'tail' && this.time - this.lastTailFlick > TAIL_FLICK_COOLDOWN) {
+        this.lastTailFlick = this.time;
+        this.procedural.flickTail();
+      }
+      this.hoverPart = part;
+      this.canvas.style.cursor = part === 'tail' ? 'grab' : part ? 'pointer' : '';
     }
     this.logo.setHover(this.hoverLogo || this.time < this.glowUntil);
 
-    // Look-at target: the logo while it is the focus, else the pointer ray.
-    if (this.hoverLogo || this.logo.isActive || this.time < this.logoFocusUntil || this.animator.lookAtLogo) {
+    // Look-at target: the logo while it is the focus, the keyboard while typing, else the pointer.
+    const kb = this.typing?.active && this.typing.keyboard.shown;
+    if (this.paused) {
+      this.procedural.setTarget(null);
+    } else if (this.hoverLogo || this.logo.isActive || this.time < this.logoFocusUntil || this.animator.lookAtLogo) {
       this.procedural.setTarget(this.logo.worldPosition('Star', this.lookVec));
+    } else if (kb) {
+      this.procedural.setTarget(this.typing.keyboard.worldCenter(this.lookVec));
     } else if (p && this.followPointer && this.time - this.pointerAt < POINTER_IDLE) {
       this.procedural.setTarget(this.pointerTarget(p));
     } else {
