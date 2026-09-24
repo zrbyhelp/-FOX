@@ -2,7 +2,7 @@
 // orange 4-point star, "2.5D" shading), the 比心 heart pop, the doze Z's and the typing keyboard.
 // Everything is a textured quad in model units, rendered with the puppet's premultiplied shader.
 import { makeSprite, makeTexture } from './puppet.js';
-import { clamp, easeOutBack, easeInOut, smooth, lerp } from './math2d.js';
+import { clamp, easeOutBack, easeInOut, easeOutCubic, smooth, lerp } from './math2d.js';
 
 const TAU = Math.PI * 2;
 
@@ -249,7 +249,11 @@ const ORBIT_R = 0.15;
 const T_IN = 0.7;
 const T_HOLD = 2.6;
 const T_OUT = 1.0;
+const POP_IN = 0.6; // s, springy scale-in (after the caller's delay), unwinding a small turn
+const POP_OUT = 0.45; // s, anticipation + shrink with a little hop and spin
+const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
 
+/** Brand logo; it pops in and away with the fox (app.js) and is hidden while the fox is away. */
 export class Logo2D {
   constructor(puppet, { pieces = ['Cube_Top', 'Cube_Left', 'Cube_Right', 'Cube_Bottom', 'Star'] } = {}) {
     this.puppet = puppet;
@@ -278,14 +282,50 @@ export class Logo2D {
     this.mode = 'idle'; // idle | activating | active | settling
     this.modeT = 0;
     this.act = 0;
-    this.pop = 1;
+    this.presence = 'shown'; // shown | in | out | hidden
+    this.popT = 0; // s into the current pop (negative = still waiting for its delay)
+    this.popS = 1; // pop scale
+    this.spin = 0; // extra in-plane turn while popping
+    this.hop = 0; // extra lift while popping away
     this.lift = 0;
     this.center = [...LOGO_POS];
   }
 
   get state() { return this.mode; }
   get isActive() { return this.mode !== 'idle'; }
+  /** Drawn (possibly still popping in or away). */
+  get visible() { return this.presence !== 'hidden'; }
+  /** Out or on its way in: hover, clicks and look-at apply. */
+  get shown() { return this.presence === 'shown' || this.presence === 'in'; }
   setHover(on) { this.hoverTarget = on ? 1 : 0; }
+
+  /** Pop in from nothing after `delay` s (with the fox's entrance). */
+  popIn(delay = 0) {
+    this.presence = 'in';
+    this.popT = -delay;
+  }
+
+  /** Pop away after `delay` s (with the fox's exit), then hidden. */
+  popOut(delay = 0) {
+    if (this.presence === 'hidden' || this.presence === 'out') return;
+    this.presence = 'out';
+    this.popT = -delay;
+    this.hoverTarget = 0;
+  }
+
+  /** Snap to shown / hidden (no animation). Showing leaves a pop-in that is under way alone. */
+  setShown(on) {
+    if (on) {
+      if (this.presence !== 'shown' && this.presence !== 'in') this.presence = 'shown';
+      return;
+    }
+    this.presence = 'hidden';
+    // comes back calm: no orbit, no glow left over from before it left
+    this.mode = 'idle';
+    this.act = 0;
+    this.phase = 0;
+    this.hover = this.hoverTarget = 0;
+  }
 
   activate() {
     if (this.mode === 'active') this.modeT = 0;
@@ -295,7 +335,6 @@ export class Logo2D {
     }
   }
 
-  startPop(delay = 0) { this.pop = -delay / 0.6; }
 
   /** Star position (look-at target) in model units. */
   starPosition(out = [0, 0]) {
@@ -306,15 +345,18 @@ export class Logo2D {
     return out;
   }
 
-  /** Generous circular hit area (like the 3D pick proxy). */
+  /** Generous circular hit area (like the 3D pick proxy); nothing while away / leaving. */
   hit(x, y) {
+    if (!this.shown) return false;
     return Math.hypot(x - this.center[0], y - this.center[1]) < 0.17 * Math.max(0.3, this.scale || 1);
   }
 
   pose(state = 'idle') {
     this.time = 0;
     this.hover = this.hoverTarget = 0;
-    this.pop = 1;
+    this.presence = 'shown';
+    this.popS = 1;
+    this.spin = this.hop = 0;
     this.mode = state === 'active' ? 'active' : 'idle';
     this.modeT = 0;
     this.act = state === 'active' ? 1 : 0;
@@ -322,10 +364,27 @@ export class Logo2D {
     this.layout();
   }
 
+  updatePresence(dt) {
+    this.popT += dt;
+    this.spin = this.hop = 0;
+    if (this.presence === 'in') {
+      const x = clamp(this.popT / POP_IN, 0, 1);
+      this.popS = this.popT <= 0 ? 0 : easeOutBack(x, 1.9);
+      this.spin = 0.9 * (1 - easeOutCubic(x)); // arrives turning back upright
+      if (x >= 1) this.presence = 'shown';
+    } else if (this.presence === 'out') {
+      const x = clamp(this.popT / POP_OUT, 0, 1);
+      this.popS = 1 - easeInBack(x);
+      this.spin = -1.6 * x * x;
+      this.hop = 0.05 * Math.sin(Math.PI * 0.85 * x);
+      if (x >= 1) this.setShown(false);
+    } else this.popS = this.presence === 'hidden' ? 0 : 1;
+  }
+
   update(dt) {
     this.time += dt;
     this.modeT += dt;
-    this.pop = Math.min(1, this.pop + dt / 0.6);
+    this.updatePresence(dt);
     this.hover += (this.hoverTarget - this.hover) * (1 - Math.exp(-dt * 10));
     switch (this.mode) {
       case 'activating':
@@ -360,9 +419,9 @@ export class Logo2D {
     const t = this.time;
     const a = this.act;
     const h = this.hover;
-    const popS = this.pop <= 0 ? 0.001 : Math.max(0.001, easeOutBack(this.pop, 1.9));
-    const lift = 0.012 * Math.sin(t * 1.1) + 0.022 * h;
-    const sway = 0.05 * Math.sin(t * 0.35);
+    const popS = Math.max(0.001, this.popS);
+    const lift = 0.012 * Math.sin(t * 1.1) + 0.022 * h + this.hop;
+    const sway = 0.05 * Math.sin(t * 0.35) + this.spin;
     const S = popS * (1 + 0.06 * h + 0.08 * a);
     this.scale = S;
     this.lift = lift;
@@ -407,7 +466,7 @@ export class Logo2D {
     // ground shadow: lighter and wider when lifted
     const sh = this.puppet.logoShadow;
     const high = this.pos[1] > 0.8; // portrait layout: floating above the head, no ground shadow
-    sh.visible = !high;
+    sh.visible = !high && popS > 0.01;
     sh.position.set(cx, 0.0, 0);
     const k = (1 + lift * 2 + 0.2 * a) * Math.min(1, popS);
     sh.scale.set(0.34 * k, 0.05 * k, 1);
@@ -568,9 +627,11 @@ const ROWS = [
     { codes: ['ShiftRight', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'], w: 1, accent: true }],
 ];
 const UNITS = 13.5;
-const KB_W = 0.46; // model units
-const KB_H = 0.164;
-const KB_PX = [640, 228];
+const KB_SCALE = 1.4; // x the first design (0.46 x 0.164), like the enlarged 3D keyboard
+const KB_W = 0.46 * KB_SCALE; // model units
+const KB_H = 0.164 * KB_SCALE;
+const KB_DESIGN = [640, 228]; // px the drawing below is laid out in
+const KB_PX = KB_DESIGN.map((v) => Math.round(v * KB_SCALE)); // texture px (crisp at the larger size)
 
 export class Keyboard2D {
   constructor(puppet, { order }) {
@@ -638,10 +699,21 @@ export class Keyboard2D {
 
   get visible() { return this.mode !== 'hidden'; }
 
+  /** Model-space box [x0, y0, x1, y1] of the key rows where they are now (tests; see draw()). */
+  keyArea() {
+    const { x, y } = this.mesh.position;
+    const w = KB_W * this.scale;
+    const h = KB_H * this.scale;
+    const [W, H] = KB_DESIGN;
+    return [x + (28 / W - 0.5) * w, y + (0.5 - 164 / H) * h, x + (612 / W - 0.5) * w, y + (0.5 - 32 / H) * h];
+  }
+
   draw() {
     const g = this.g;
-    const [W, H] = KB_PX;
-    g.clearRect(0, 0, W, H);
+    g.setTransform(1, 0, 0, 1, 0, 0);
+    g.clearRect(0, 0, KB_PX[0], KB_PX[1]);
+    g.setTransform(KB_PX[0] / KB_DESIGN[0], 0, 0, KB_PX[1] / KB_DESIGN[1], 0, 0);
+    const [W] = KB_DESIGN;
     const inset = 44; // perspective: the far edge is narrower
     const top = 18;
     const bottom = 176;

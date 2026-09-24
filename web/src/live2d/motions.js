@@ -84,26 +84,10 @@ function waveArm(v, t, t0, t1, side = 'L', rate = 2.6) {
   v.ParamAngleZ = (v.ParamAngleZ ?? 0) + e * 1.2 * Math.sin(ph - 0.4);
 }
 
+/** Calm "hi~" mouth over [t0, t1]: ~2 eased open / close cycles per second on top of the curve. */
 function talk(v, t, t0, t1, amount = 0.3) {
   const e = env(t, t0, t0 + 0.15, t1 - 0.2, t1);
-  v.ParamMouthOpen = clamp((v.ParamMouthOpen ?? 0) + e * amount * (0.5 + 0.5 * Math.sin(TAU * 3.1 * t) * Math.sin(TAU * 1.3 * t + 1)), 0, 1);
-}
-
-/** Hop travel for Enter / Exit: `n` hops from x0 to x1 over [t0, t1]. */
-function hops(v, t, t0, t1, x0, x1, n = 3, height = 0.06) {
-  const s = clamp((t - t0) / (t1 - t0), 0, 1);
-  const k = s * n;
-  const i = Math.min(n - 1, Math.floor(k));
-  const f = k - i;
-  // each hop moves an equal share; ease within the hop so the fox lands, then pushes off
-  const moved = (i + smooth(f)) / n;
-  v.ParamRootX = x0 + (x1 - x0) * moved;
-  const air = t > t0 && t < t1 ? hop(f) : 0;
-  v.ParamRootY = air * height;
-  // squash on the ground, stretch in the air
-  const ground = t > t0 && t < t1 ? Math.exp(-((f < 0.5 ? f : 1 - f) ** 2) / 0.006) : 0;
-  v.ParamSquash = (air > 0.15 ? 0.25 * air : 0) - 0.45 * ground * (t < t1 ? 1 : 0);
-  v.ParamRootRot = (x1 > x0 ? -1 : 1) * 4 * Math.sin(Math.PI * f) * (t > t0 && t < t1 ? 1 : 0);
+  v.ParamMouthOpen = clamp((v.ParamMouthOpen ?? 0) + e * amount * (0.5 + 0.5 * Math.sin(TAU * 2.1 * (t - t0))), 0, 1);
 }
 
 export const MOTIONS = {};
@@ -398,50 +382,6 @@ def('Sit_Doze', {
     v.ParamAngleX = -4;
     v.ParamBodyAngleZ = 1.5 * Math.sin(ph);
     v.ParamMouthOpen = 0.08 + 0.06 * Math.sin(ph);
-  },
-});
-
-// ---- presence -----------------------------------------------------------------------------
-
-const ENTER_X = 1.35; // model units right of the rest position: off screen at any aspect
-
-def('Enter', {
-  duration: 3.1, fadeIn: 0, lookAt: 0, priority: 2, interruptible: false,
-  arms: {
-    L: [[0, 'rest'], [1.55, 'rest'], [1.95, 'waveUp'], [2.65, 'waveUp'], [3.1, 'rest']],
-    R: [[0, 'rest'], [1.55, 'rest'], [1.95, 'chest'], [2.65, 'chest'], [3.1, 'rest']],
-  },
-  curves: {
-    ParamAngleX: [[0, -14], [1.4, -12], [1.8, 4], [2.7, 4], [3.1, 0]],
-    ParamBodyAngleX: [[0, -4], [1.4, -4], [1.8, 0]],
-    ParamEyeSmile: [[0, 0.5], [1.4, 0.5], [1.8, 0.2], [2.8, 0.2], [3.1, 0]],
-    ParamMouthOpen: [[0, 0.3], [1.5, 0.3], [1.9, 0.7], [2.6, 0.6], [3.0, 0]],
-    ParamAngleZ: [[0, 0], [1.6, 0], [2.0, -6], [2.7, -5], [3.1, 0]],
-  },
-  proc(t, v) {
-    hops(v, t, 0, 1.5, ENTER_X, 0, 4, 0.055);
-    waveArm(v, t, 1.95, 2.65, 'L', 2.8);
-    v.ParamTailSwing = 22 + 10 * Math.sin(TAU * 2 * t);
-  },
-});
-
-def('Exit', {
-  duration: 2.9, lookAt: 0, priority: 2, interruptible: false,
-  arms: {
-    L: [[0, 'rest'], [0.4, 'waveUp'], [1.1, 'waveUp'], [1.45, 'rest']],
-    R: [[0, 'rest'], [0.4, 'chest'], [1.1, 'chest'], [1.45, 'rest']],
-  },
-  curves: {
-    ParamAngleX: [[0, 0], [0.4, 4], [1.1, 4], [1.5, 14], [2.9, 14]],
-    ParamBodyAngleX: [[0, 0], [1.2, 0], [1.5, 4], [2.9, 4]],
-    ParamMouthOpen: [[0, 0], [0.3, 0.7], [1.0, 0.6], [1.3, 0.2], [2.9, 0.2]],
-    ParamEyeSmile: [[0, 0], [0.3, 0.3], [1.1, 0.3], [1.5, 0.5], [2.9, 0.5]],
-    ParamAngleZ: [[0, 0], [0.4, -6], [1.1, -5], [1.5, 0]],
-  },
-  proc(t, v) {
-    waveArm(v, t, 0.4, 1.1, 'L', 2.8);
-    hops(v, t, 1.45, 2.9, 0, ENTER_X, 4, 0.055);
-    v.ParamTailSwing = 22 + 10 * Math.sin(TAU * 2 * t);
   },
 });
 

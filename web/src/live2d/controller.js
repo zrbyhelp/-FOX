@@ -4,10 +4,14 @@
 //   Entering / Exiting / Away
 // Motions come from motions.js and are blended by the MotionPlayer; "Idle" means no one-shot
 // track is playing (only the idle base, plus the occasional Idle_LookAround).
+// Presence is the 3D fox's: pop in out of thin air + Wave (start, 回来), Wave goodbye + pop away
+// (离场); `presence` {mode, t} drives the puppet's ParamScale and the logo (app.js).
 import { MOTIONS } from './motions.js';
 
 const FADE = 0.3;
 const FADE_IDLE = 0.4;
+export const POP_IN = 0.8; // s, scale 0 -> 1 with a springy overshoot (easeOutBack)
+export const POP_OUT = 0.6; // s, a little anticipation, then scale -> 0 (easeInBack)
 
 // Graceful substitutes (same table as the 3D animator; every motion exists here, but keeping it
 // makes has()/resolve() behave identically).
@@ -41,6 +45,9 @@ export class Controller {
     this.idleTime = 0;
     this.lookAroundIn = this.nextLookAround();
     this.hidden = false; // Away: fox not drawn
+    this.presence = { mode: 'shown', t: 0 }; // shown | popIn | popOut | hidden
+    this.enterWaits = null; // Entering: 'clip' (the Wave) | 'pop' (the scale pop)
+    this.exitStep = null; // Exiting: 'wave' | 'pop'
     player.on((type, tr, data) => {
       if (type === 'end' && tr === this.cur.track) this.onFinished();
       if (type === 'event') this.emit('motionEvent', { name: data.name, clip: tr.name });
@@ -272,6 +279,12 @@ export class Controller {
 
   // ---- presence -------------------------------------------------------------------------------
 
+  setPresence(mode) {
+    this.presence = { mode, t: 0 };
+    this.emit('presence', { mode });
+  }
+
+  /** Pop in out of thin air, then Wave. `intro` = first appearance (start()). */
   enter({ intro = false } = {}) {
     if (this._state === 'Exiting') { this.pendingPresence = 'enter'; return 'Enter'; }
     if (this._state === 'Entering') { this.pendingPresence = null; return 'Enter'; }
@@ -282,12 +295,16 @@ export class Controller {
     this.phase = null;
     this.idleTime = 0;
     this.hidden = false;
+    this.exitStep = null;
     this.stateName = 'Entering';
     this.player.clear(); // hidden before: nothing to blend from
-    this.play('Enter', 0, intro ? 'Intro' : 'Enter');
+    this.setPresence('popIn');
+    this.play('Wave', FADE, intro ? 'Intro' : 'Enter');
+    this.enterWaits = 'clip';
     return 'Enter';
   }
 
+  /** Wave goodbye, then pop away (the mirror of enter()), then Away. */
   exit() {
     if (this._state === 'Away') return null;
     if (this._state === 'Exiting') { this.pendingPresence = null; return 'Exit'; }
@@ -297,7 +314,7 @@ export class Controller {
       this.wake(null);
       return 'Exit';
     }
-    if (this._state === 'Entering' || !this.canInterrupt('Exit')) {
+    if (this._state === 'Entering' || !this.canInterrupt('Wave')) {
       this.pendingPresence = 'exit';
       return 'Exit';
     }
@@ -305,19 +322,39 @@ export class Controller {
     this.queued = null;
     this.phase = null;
     this.stateName = 'Exiting';
-    this.play('Exit', FADE);
+    this.exitStep = 'wave';
+    this.play('Wave', FADE, 'Exit');
     return 'Exit';
+  }
+
+  startPopOut() {
+    this.exitStep = 'pop';
+    this.setPresence('popOut');
+    this.player.stopAll(FADE_IDLE); // keep breathing on the idle base while shrinking
+    this.cur = { name: 'Idle', intent: 'Idle', track: null };
+    this.emit('clip', { clip: 'Idle', intent: 'Idle' });
   }
 
   goAway() {
     this.stateName = 'Away';
     this.hidden = true;
+    this.exitStep = null;
     this.queued = null;
     this.player.clear();
+    this.setPresence('hidden');
     this.cur = { name: 'Idle', intent: 'Away', track: null };
     this.emit('clip', { clip: 'Idle', intent: 'Away' });
     if (this.pendingPresence === 'enter') this.enter();
     this.pendingPresence = null;
+  }
+
+  stepPresence(dt) {
+    const p = this.presence;
+    p.t += dt;
+    if (p.mode === 'popIn' && p.t >= POP_IN) {
+      this.setPresence('shown');
+      if (this._state === 'Entering' && this.enterWaits === 'pop') this.finishEnter();
+    } else if (p.mode === 'popOut' && p.t >= POP_OUT) this.goAway();
   }
 
   // ---- misc -----------------------------------------------------------------------------------
@@ -345,10 +382,12 @@ export class Controller {
         } else if (name === 'StandUp') this.afterStandUp(FADE);
         return;
       case 'Entering':
-        this.finishEnter();
+        if (this.presence.mode === 'popIn') this.enterWaits = 'pop'; // Wave done before the pop
+        else this.finishEnter();
         return;
       case 'Exiting':
-        return; // Exit must reach the edge before hiding: handled in update()
+        if (this.exitStep === 'wave') this.startPopOut();
+        return;
       case 'Away':
         return;
       case 'Typing':
@@ -372,6 +411,7 @@ export class Controller {
   }
 
   finishEnter() {
+    this.enterWaits = null;
     if (this.pendingPresence === 'exit') {
       this.stateName = 'Idle';
       this.exit();
@@ -390,8 +430,7 @@ export class Controller {
 
   update(dt) {
     this.idleTime += dt;
-    // Exit: hide once the clip has fully played (the fox is off screen by then)
-    if (this._state === 'Exiting' && this.cur.name === 'Exit' && this.cur.track && this.cur.track.t >= MOTIONS.Exit.duration) this.goAway();
+    this.stepPresence(dt);
     if (!this.auto) return;
     if (this._state === 'Idle') {
       if (this.idleTime >= this.sitAfter) {

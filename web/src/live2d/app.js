@@ -24,7 +24,8 @@
  *                when the host page forwards keys itself with app.typeKey(code).
  *   background   draw the page's radial gradient + ground shadow in the canvas (default true;
  *                false = transparent canvas over the host's own background).
- *   intro        pop in + wave on every start() (default true).
+ *   intro        pop in + wave on every start() (default true), like the 3D fox's page load
+ *                and its 回来; 'Exit' waves goodbye and pops away, the logo goes with it.
  *   seed         RNG seed (deterministic behaviour for tests).
  *   debug        preserveDrawingBuffer (screenshots) + window.__live2d = app.
  *
@@ -44,7 +45,7 @@
  *                         'Exiting' | 'Away'
  *   clip                  current motion name ('Idle' when only the idle layer plays).
  *   setLookEnabled(bool)  head / eyes follow the pointer (toolbar 跟随鼠标).
- *   setTalking(bool)      flap the mouth while a speech bubble is shown (ParamMouthOpen).
+ *   setTalking(bool)      talk (calm eased mouth, ParamMouthOpen) while a speech bubble is shown.
  *   setInsetBottom(px)    refit above a toolbar of that height.
  *   onEvent(cb)           cb(event); returns an unsubscribe function. Events:
  *                           { type: 'clip', name, intent }  a motion started (bubbles)
@@ -56,24 +57,28 @@
  *   resize()              refit to the container (also automatic via ResizeObserver). Wide
  *                         views put the logo beside the fox (3D framing); portrait views float
  *                         it up-left above the head so the fox can be larger.
- *   debug                 test hooks: freeze(), advance(sec), pose(name, t), info(),
- *                         setIdleTimeouts(sit, doze), partAt(x, y), clientPos(part), params.
+ *   debug                 test hooks: freeze(), advance(sec), trace(sec, names), pose(name, t),
+ *                         info(), setIdleTimeouts(sit, doze), partAt(x, y), clientPos(part), params.
  * ---------------------------------------------------------------------------------------------
  */
 import { Puppet, CONTENT_BOX, CONTENT_BOX_PORTRAIT } from './puppet.js';
 import { Rig, defaultParams, clampParams } from './rig.js';
 import { Physics } from './physics.js';
 import { MOTIONS, MotionPlayer, applyIdle } from './motions.js';
-import { Controller } from './controller.js';
+import { Controller, POP_IN, POP_OUT } from './controller.js';
 import { Logo2D, HeartFx, DozeFx, Keyboard2D, LOGO_POS, LOGO_POS_PORTRAIT } from './props.js';
 import { Critical, makeRng, clamp, softClamp, smooth, easeOutBack, affApplyX, affApplyY, affAngle } from './math2d.js';
+import { TalkRhythm } from '../talk.js';
 
 const CLICK_DELAY = 250; // ms to wait for a possible double-click
 const PET_DISTANCE = 12; // px of pointer travel on the head before it counts as petting
 const TAIL_DISTANCE = 6;
 const POINTER_IDLE = 5; // s without pointer movement before the look-at target is dropped
 const TYPE_IDLE = 1.8; // s without keys before the keyboard goes away
-const INTRO = 0.8; // s pop-in
+const LOGO_IN_DELAY = 0.15; // s the logo pops in after the fox
+const LOGO_OUT_DELAY = 0.06; // s the logo pops away after the fox
+const EXPR_OMEGA = 7; // expression params ease (critically damped): swaps take >= ~0.3 s
+const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
 
 const CLIPS = ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp', 'Idle', 'SitDown', 'Idle_LookAround'];
 const ALIASES = ['Sit', 'Doze', 'Wake', 'PetEnd', 'logo', 'head', 'body', 'tail', 'ear_L', 'ear_R'];
@@ -144,6 +149,12 @@ export async function createLive2DApp({
     if (type === 'clip') emit({ type: 'clip', name: d.clip, intent: d.intent });
     else if (type === 'state') emit({ type: 'state', from: d.from, to: d.to });
     else if (type === 'motionEvent') onMotionEvent(d.name);
+    else if (type === 'presence') {
+      // the logo arrives a beat after the fox and leaves just after it; hidden while away
+      if (d.mode === 'popIn') logo.popIn(LOGO_IN_DELAY);
+      else if (d.mode === 'popOut') logo.popOut(LOGO_OUT_DELAY);
+      else logo.setShown(d.mode === 'shown');
+    }
   });
 
   // ---- runtime state ------------------------------------------------------------------------
@@ -154,7 +165,6 @@ export async function createLive2DApp({
     raf: 0,
     lastT: 0,
     disposed: false,
-    introT: INTRO,
     lookEnabled: true,
     pointer: null, // {x, y, type} client px
     pointerAt: -Infinity,
@@ -170,7 +180,9 @@ export async function createLive2DApp({
     look: { x: new Critical(0, 6), y: new Critical(0, 6), ex: new Critical(0, 14), ey: new Critical(0, 14), w: new Critical(0, 5) },
     pet: { z: new Critical(0, 9), x: new Critical(0, 9) },
     tailHoldW: new Critical(0, 14),
-    blink: { in: 2 + rng() * 3, t: -1, double: false },
+    blink: { in: 2.5 + rng() * 3.5, t: -1, double: false },
+    // eased expression params (the motions' eye-smile / brow / mouth swaps never snap)
+    expr: { ParamEyeSmile: new Critical(0, EXPR_OMEGA), ParamBrowL: new Critical(0, EXPR_OMEGA), ParamBrowR: new Critical(0, EXPR_OMEGA), ParamMouthOpen: new Critical(0, EXPR_OMEGA + 2) },
     earFlick: { L: -1, R: -1, amp: { L: 1, R: 1 } },
     earTwitchIn: 5 + rng() * 5,
     nodT: -1,
@@ -178,8 +190,8 @@ export async function createLive2DApp({
     flicks: 0,
     wasHidden: false,
     talking: false,
-    talkEnv: 0,
-    talkT: 0,
+    talkEnv: new Critical(0, 9),
+    talk: new TalkRhythm(rng),
     typing: { active: false, lastKeyAt: -Infinity, stamps: [], keystrokes: 0, demoUntil: 0, demoNext: 0, demoIndex: 0 },
   };
 
@@ -212,6 +224,7 @@ export async function createLive2DApp({
       case 'body': return c.request(rng() < 0.5 ? 'Wave' : 'Shrug');
       case 'tail': return c.request('LookBack');
       case 'logo':
+        if (!logo.shown) return null;
         logo.activate();
         S.logoFocusUntil = S.time + 4.5;
         return c.request('Reach');
@@ -450,6 +463,10 @@ export async function createLive2DApp({
 
   function interactionUpdate() {
     const ptr = S.pointer;
+    if (S.hoverLogo && !logo.shown) { // the logo left with the fox
+      S.hoverLogo = false;
+      S.hoverDirty = true;
+    }
     if (S.hoverDirty && !S.down) {
       S.hoverDirty = false;
       const part = ptr && ptr.type === 'mouse' ? pick(ptr.x, ptr.y) : null;
@@ -464,7 +481,7 @@ export async function createLive2DApp({
 
   function lookTarget() {
     const ptr = S.pointer;
-    if (S.hoverLogo || logo.isActive || S.time < S.logoFocusUntil || controller.lookAtLogo) return logo.starPosition(tmp);
+    if (logo.shown && (S.hoverLogo || logo.isActive || S.time < S.logoFocusUntil || controller.lookAtLogo)) return logo.starPosition(tmp);
     if (ptr && S.lookEnabled && S.time - S.pointerAt < POINTER_IDLE) {
       const m = puppet.toModel(ptr.x, ptr.y, S.model);
       tmp[0] = m.x;
@@ -536,26 +553,30 @@ export async function createLive2DApp({
     }
     physics.tailHoldW = clamp(S.tailHoldW.x, 0, 1);
 
-    // blink
+    // expressions: the motions' eye-smile / brow / mouth changes ease in and out (a step or a
+    // short fade in a motion would swap the eye / mouth layers in a few frames)
+    for (const k in S.expr) p[k] = S.expr[k].step(p[k], dt);
+
+    // blink: 0.2 s, eased close (0.08 s), a short hold, eased open
     const B = S.blink;
     if (mix.blink > 0.5) {
       B.in -= dt;
       if (B.in <= 0 && B.t < 0) {
         B.t = 0;
         B.double = rng() < 0.2;
-        B.in = 2 + rng() * 3.5;
+        B.in = 2.5 + rng() * 3.5;
       }
     }
     let open = 1;
     if (B.t >= 0) {
       B.t += dt;
       const dur = 0.2;
-      const total = B.double ? dur * 2 + 0.08 : dur;
+      const total = B.double ? dur * 2 + 0.1 : dur;
       if (B.t >= total) B.t = -1;
       else {
         let t = B.t;
-        if (B.double && t > dur) t = Math.max(0, t - dur - 0.08);
-        const close = t < 0.07 ? t / 0.07 : t < 0.1 ? 1 : 1 - (t - 0.1) / 0.1;
+        if (B.double && t > dur) t = Math.max(0, t - dur - 0.1);
+        const close = t < 0.08 ? t / 0.08 : t < 0.1 ? 1 : 1 - (t - 0.1) / 0.1;
         open = 1 - smooth(clamp(close, 0, 1));
       }
     }
@@ -595,20 +616,15 @@ export async function createLive2DApp({
       if (c.state === 'Typing') p[`ParamArm${s}C`] -= 10 * Math.sin((Math.PI * S.tap[s]) / 0.16);
     }
 
-    // talking (speech bubble shown by the host): quick irregular mouth flaps
-    S.talkEnv += ((S.talking ? 1 : 0) - S.talkEnv) * (1 - Math.exp(-dt * 12));
-    if (S.talkEnv > 0.01) {
-      S.talkT += dt;
-      const t = S.talkT;
-      const flap = 0.5 + 0.5 * Math.sin(t * 17.3) * Math.sin(t * 6.1 + 1.3);
-      p.ParamMouthOpen = Math.max(p.ParamMouthOpen, S.talkEnv * (0.15 + 0.6 * flap));
-    }
+    // talking (speech bubble shown by the host): calm eased syllables, closed rests (talk.js)
+    const env = S.talkEnv.step(S.talking && !c.hidden ? 1 : 0, dt);
+    if (env > 0.01) p.ParamMouthOpen = Math.max(p.ParamMouthOpen, env * 0.8 * S.talk.step(dt));
+    else if (!S.talking) S.talk.reset(); // the next bubble starts a fresh phrase
 
-    // pop-in
-    if (S.introT < INTRO) {
-      S.introT += dt;
-      p.ParamScale = Math.max(0.001, easeOutBack(Math.min(1, S.introT / INTRO)));
-    }
+    // presence: pop in out of thin air / pop away (the 3D fox's curves)
+    const pr = c.presence;
+    if (pr.mode === 'popIn') p.ParamScale = Math.max(0.001, easeOutBack(Math.min(1, pr.t / POP_IN)));
+    else if (pr.mode === 'popOut') p.ParamScale = Math.max(0.001, 1 - easeInBack(Math.min(1, pr.t / POP_OUT)));
     for (const k in overrides) p[k] = overrides[k];
   }
 
@@ -698,9 +714,15 @@ export async function createLive2DApp({
     controller.typingWanted = false;
     controller.hidden = false;
     controller.phase = null;
+    controller.exitStep = null;
+    controller.enterWaits = null;
     controller.toIdle(0);
+    controller.setPresence('shown');
     controller.idleTime = 0;
     physics.tailHold = null;
+    for (const k in S.expr) S.expr[k].reset(defaults[k]);
+    S.talkEnv.reset(0);
+    S.talk.reset();
   }
 
   // ---- API ------------------------------------------------------------------------------------
@@ -715,11 +737,7 @@ export async function createLive2DApp({
       layout();
       puppet.resize();
       resetBehaviour();
-      if (intro) {
-        S.introT = 0;
-        logo.startPop(0.35);
-        controller.request('Wave');
-      }
+      if (intro) controller.enter({ intro: true }); // pops in + waves, the logo a beat later
       // settle the rig + physics on the first frame's params
       step(0);
       physics.reset(p);
@@ -818,6 +836,17 @@ export async function createLive2DApp({
         puppet.render();
         return api.debug.info();
       },
+      /** Like advance() but samples params after every step: { name: [values] }. */
+      trace(sec, names, fps = 60) {
+        const out = Object.fromEntries(names.map((n) => [n, []]));
+        const n = Math.max(1, Math.round(sec * fps));
+        for (let i = 0; i < n; i++) {
+          step(1 / fps);
+          for (const k of names) out[k].push(p[k]);
+        }
+        puppet.render();
+        return out;
+      },
       /** Reset, start `name` (request semantics) and simulate `t` seconds. */
       pose(name, t = 1, { seed: s = 1 } = {}) {
         rng.seed(s);
@@ -825,7 +854,6 @@ export async function createLive2DApp({
         logo.pose('idle');
         S.blink.t = -1;
         S.blink.in = 2.6 + rng() * 2;
-        S.introT = INTRO;
         physics.reset(p);
         step(1 / 60);
         const clip = name && name !== 'Idle' ? trigger(name) : 'Idle';
@@ -873,9 +901,17 @@ export async function createLive2DApp({
           phase: controller.phase,
           hidden: controller.hidden,
           running: S.running,
+          presence: controller.presence.mode,
+          scale: p.ParamScale,
           logo: logo.state,
+          logoPresence: logo.presence,
+          logoVisible: logo.visible && logo.popS > 0.01,
+          logoScale: logo.popS,
           typing: S.typing.active,
           keyboard: keyboard.mode,
+          keyboardWidth: keyboard.mesh.scale.x * keyboard.mesh.geometry.parameters?.width,
+          keyArea: keyboard.keyArea(),
+          paws: [rig.point('pawL', [0, 0]), rig.point('pawR', [0, 0])],
           keystrokes: S.typing.keystrokes,
           heartsShown: hearts.shown,
           heartActive: hearts.active,
