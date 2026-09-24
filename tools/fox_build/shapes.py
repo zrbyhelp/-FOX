@@ -122,18 +122,29 @@ def head_sdf(p):
 HEAD_BBOX = ((-0.42, -0.27, 0.36), (0.42, 0.26, 1.07))
 
 
+def _leg_column(q):
+    """Left leg (use with mirror_x): a short thick column growing out of the belly."""
+    hip, knee, ankle, toe = _leg_pts("L")
+    top = np.array([hip[0] + 0.002, -0.004, 0.152])
+    bot = np.array([ankle[0] + 0.002, -0.026, 0.066])
+    return S.round_cone(q, top, bot, P["leg_radius"] * 1.07, P["leg_radius"] * 0.86)
+
+
 def body_sdf(p):
-    lower = S.ellipsoid(p, (0, 0.012, 0.205), (0.178, 0.162, 0.152))
+    """Pear body with the legs as part of its surface: the lower belly flows in a soft S-curve
+    into two short thick legs with a rounded notch between them (like the art); the feet are
+    separate parts (leg_sdf)."""
+    lower = S.ellipsoid(p, (0, 0.012, 0.216), (0.174, 0.160, 0.140))
     upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.128, 0.112, 0.128))
     d = S.smin(lower, upper, 0.12)
-    belly = S.ellipsoid(p, (0, -0.042, 0.215), (0.140, 0.125, 0.130))
+    belly = S.ellipsoid(p, (0, -0.042, 0.222), (0.140, 0.125, 0.126))
     d = S.smin(d, belly, 0.05)
-    butt = S.ellipsoid(p, (0, 0.070, 0.165), (0.150, 0.118, 0.116))
+    butt = S.ellipsoid(p, (0, 0.070, 0.178), (0.150, 0.118, 0.106))
     d = S.smin(d, butt, 0.05)
-    return d
+    return S.smin(d, _leg_column(S.mirror_x(p)), 0.058)
 
 
-BODY_BBOX = ((-0.23, -0.21, 0.03), (0.23, 0.22, 0.50))
+BODY_BBOX = ((-0.23, -0.21, -0.005), (0.23, 0.22, 0.50))
 
 
 def _arm_pts(side="L"):
@@ -143,19 +154,25 @@ def _arm_pts(side="L"):
     return sh, el, wr, tip
 
 
+ARM_FLAT = 0.76        # arm / paw thickness : width (flattened, not a round tube)
+ARM_WIDEN = 1.22       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
+
+
 def arm_sdf(p, side="L"):
+    """A flattened stubby arm that widens gradually from the shoulder into a rounded mitten paw
+    (the widest part). Local frame: x across the arm, y along it, z front/back (thickness)."""
     sh, el, wr, tip = _arm_pts(side)
-    ar = P["arm_radius"]; pr = P["paw_radius"]
-    # one smooth, slightly tapered stub shoulder -> wrist (the bend comes from skinning)
-    d = S.round_cone(p, sh, wr, ar, ar * 0.88)
     f = C.paw_frame(side)
-    # smooth mitten paw: a rounded bulb barely wider than the wrist (x across, y along, z back)
-    o, R = S.frame(f["centre"], f["x"], f["y"])
-    ql = S.to_local(p, o, R)
-    paw = S.ellipsoid(ql, (0, 0.002, 0), (pr * 1.0, pr * 1.04, pr * 0.86))
-    d = S.smin(d, paw, 0.03)
-    d = S.smin(d, S.sphere(p, sh, ar * 1.02), 0.02)  # ball root at the shoulder pivot
-    return d
+    o, R = S.frame(sh, f["x"], f["y"])
+    q = S.to_local(p, o, R)
+    q[:, 2] /= ARM_FLAT
+    L = float(np.linalg.norm(wr - sh))
+    ar = P["arm_radius"]; pr = P["paw_radius"]
+    d = S.round_cone(q, (0, 0, 0), (0, L, 0), ar, ar * ARM_WIDEN)
+    pc = L + float((f["centre"] - wr) @ f["y"])
+    paw = S.ellipsoid(q, (0, pc, 0), (pr, pr * 1.06, pr * 1.04))
+    d = S.smin(d, paw, 0.035) * ARM_FLAT
+    return S.smin(d, S.sphere(p, sh, ar * 1.05), 0.02)  # rounded root at the shoulder pivot
 
 
 def arm_bbox(side="L"):
@@ -171,14 +188,15 @@ def _leg_pts(side="L"):
 
 
 def leg_sdf(p, side="L"):
+    """The foot: rounded, a bit wider than the leg, flat sole, two toe grooves; a short ankle
+    stub reaches up inside the leg column (body_sdf) so the foot stays attached when it bends."""
     hip, knee, ankle, toe = _leg_pts(side)
-    lr = P["leg_radius"]
     fx, fy, fz = P["foot_size"]
-    d = S.sphere(p, hip, lr * 1.04)
-    d = S.smin(d, S.round_cone(p, hip, ankle + np.array([0, 0, 0.02]), lr, lr * 0.98), 0.02)
     fc = np.array([ankle[0], -0.030, fz * 0.5])
-    foot = S.ellipsoid(p, fc, (fx / 2, fy / 2, fz / 2))
-    d = S.smin(d, foot, 0.035)
+    d = S.ellipsoid(p, fc, (fx / 2, fy / 2, fz / 2))
+    stub = S.round_cone(p, np.array([ankle[0], -0.026, 0.050]), np.array([ankle[0], -0.024, 0.100]),
+                        P["leg_radius"] * 0.80, P["leg_radius"] * 0.78)
+    d = S.smin(d, stub, 0.03)
     d = S.smax(d, -(p[:, 2] - 0.002), 0.012)   # flat sole on the ground plane
     for gx in (-0.018, 0.018):
         a = np.array([ankle[0] + gx, fc[1] - fy * 0.30, fz * 0.80])
@@ -189,6 +207,6 @@ def leg_sdf(p, side="L"):
 
 def leg_bbox(side="L"):
     hip, knee, ankle, toe = _leg_pts(side)
-    return (np.array([hip[0] - 0.1, -0.14, -0.01]), np.array([hip[0] + 0.1, 0.1, hip[2] + 0.08]))
+    return (np.array([hip[0] - 0.085, -0.125, -0.01]), np.array([hip[0] + 0.085, 0.06, 0.175]))
 
 

@@ -94,8 +94,8 @@ P = {
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
     "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.055,
-    "paw_radius": 0.054,
+    "arm_radius": 0.044,                     # half-width at the shoulder (widens to the paw)
+    "paw_radius": 0.057,                     # half-width of the paw, the widest part
     "leg_radius": 0.066,
     "foot_size": (0.122, 0.132, 0.084),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]

@@ -167,7 +167,8 @@ class Lib:
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.041, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0), **kw)
+            # tips down and in, orange ends underneath (ref 1)
+            self.arm(p, s, (sx * 0.044, -0.215, 0.300), aim=(sx * -0.45, -0.45, -0.75), **kw)
         return p
 
     def heart(self, p=None):
@@ -175,7 +176,7 @@ class Lib:
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
             # paws meet at the chest, tips touching (the web adds a pink heart that pops out)
-            self.arm(p, s, (sx * 0.050, -0.240, 0.300), aim=(sx * -0.2, -0.35, 0.9), palm=(-sx * 0.9, 0.0, 0.2))
+            self.arm(p, s, (sx * 0.048, -0.222, 0.296), aim=(sx * -0.62, -0.40, -0.62), palm=(-sx * 0.9, 0.0, 0.2))
         return p
 
     def paw_chest(self, p, side, low=False):

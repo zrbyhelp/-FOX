@@ -64,15 +64,25 @@ def head_weights(V):
     return W
 
 
+def _leg_share(V):
+    """How much of the body surface is leg (the legs grow out of the belly): 0 on the torso and
+    the crotch centre line, 1 on the lower leg."""
+    return S.smoothstep(0.150, 0.100, V[:, 2]) * S.smoothstep(0.014, 0.046, np.abs(V[:, 0]))
+
+
 def body_colors(V, N):
     cream = C.linear("fur"); white = C.linear("fur_white")
     x, y, z = V[:, 0], V[:, 1], V[:, 2]
     belly = S.smoothstep(-0.05, -0.14, y) * np.exp(-((z - 0.22) / 0.12) ** 2) * np.exp(-(x / 0.12) ** 2)
-    return _mix(np.tile(cream, (len(V), 1)), white, 0.45 * belly)
+    col = _mix(np.tile(cream, (len(V), 1)), white, 0.45 * belly)
+    # legs: airbrushed orange fading in toward the ankles (the feet are fully orange)
+    leg = S.smoothstep(0.012, 0.040, np.abs(x))
+    col = _mix(col, C.linear("orange_light"), leg * S.smoothstep(0.128, 0.068, z))
+    return _mix(col, C.linear("orange"), 0.75 * leg * S.smoothstep(0.086, 0.040, z))
 
 
 def body_weights(V):
-    z = V[:, 2]
+    x, z = V[:, 0], V[:, 2]
     centers = {"hips": 0.12, "spine": 0.245, "chest": 0.365, "neck": 0.465}
     sig = 0.075
     W = {b: np.exp(-((z - c) / sig) ** 2) for b, c in centers.items()}
@@ -80,6 +90,16 @@ def body_weights(V):
     W["neck"] *= S.smoothstep(0.40, 0.45, z)
     breath = 0.8 * np.exp(-((z - 0.235) / 0.085) ** 2) * S.smoothstep(0.02, -0.08, V[:, 1])
     W["breath"] = breath
+    # the leg columns follow the thigh / shin bones (knee ~0.105)
+    leg = _leg_share(V)
+    s = W["hips"] + W["spine"] + W["chest"] + W["neck"] + 1e-9
+    for k in ("hips", "spine", "chest", "neck"):
+        W[k] = W[k] / s * (1 - leg)
+    W["breath"] *= 1 - leg
+    shin = leg * S.smoothstep(0.112, 0.078, z)
+    for side, m in (("L", x > 0), ("R", x <= 0)):
+        W[f"thigh_{side}"] = np.where(m, leg - shin, 0.0)
+        W[f"shin_{side}"] = np.where(m, shin, 0.0)
     return W
 
 
@@ -119,11 +139,10 @@ def arm_weights(V, side="L"):
 
 
 def leg_colors(V, N, side="L"):
+    """The feet (the legs themselves are part of the body surface)."""
     z = V[:, 2]
-    cream = C.linear("fur")
-    g = S.smoothstep(0.125, 0.06, z)
-    col = _mix(np.tile(cream, (len(V), 1)), C.linear("orange_light"), g)
-    col = _mix(col, C.linear("orange"), 0.9 * S.smoothstep(0.085, 0.035, z))
+    col = np.tile(C.linear("orange_light"), (len(V), 1))
+    col = _mix(col, C.linear("orange"), 0.9 * S.smoothstep(0.092, 0.035, z))
     # sole + toe beans slightly deeper
     sole = S.smoothstep(0.012, 0.004, z)
     col = _mix(col, C.linear("sole"), 0.6 * sole)
@@ -131,9 +150,8 @@ def leg_colors(V, N, side="L"):
 
 
 def leg_weights(V, side="L"):
+    """Feet: the foot bone, blending into the shin up the ankle stub."""
     z = V[:, 2]; y = V[:, 1]
-    thigh = S.smoothstep(0.115, 0.15, z)
     foot = S.smoothstep(0.075, 0.045, z) * np.maximum(S.smoothstep(0.0, -0.03, y), S.smoothstep(0.05, 0.02, z))
     foot = np.clip(foot, 0, 1)
-    shin = np.clip(1 - thigh - foot, 0, 1)
-    return {f"thigh_{side}": thigh, f"shin_{side}": shin, f"foot_{side}": foot}
+    return {f"shin_{side}": 1 - foot, f"foot_{side}": foot}
