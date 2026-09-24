@@ -52,7 +52,7 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   rim.position.set(0.6, 1.9, -2.6);
   // warm bounce from the floor / the body below: keeps the chin, the underside of the paws and
   // the lower belly light and creamy (the art has no grey crescents under the head)
-  const bounce = new THREE.DirectionalLight(0xffeedd, 0.55);
+  const bounce = new THREE.DirectionalLight(0xffeedd, 0.8);
   bounce.position.set(0.3, -1.2, 2.0);
   scene.add(fill, rim, bounce);
 

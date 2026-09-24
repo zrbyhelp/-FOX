@@ -31,7 +31,8 @@ COLORS = {
     "orange": "#F07E3E",       # inner ear, feet, paw tips (saturated end of gradients)
     "orange_light": "#F9B07A", # light end of orange gradients
     "tail_tip": "#F2904F",
-    "sole": "#EE7A3A",         # foot soles / toe beans
+    "sole": "#F6A06A",         # foot soles: lighter than the toes (they face away from the key light)
+    "sole_pad": "#F08852",     # paw pads (main pad + toe beans), a touch deeper
     "blush": "#F8A994",
     "scarf": "#E86F3E",
     "scarf_square": "#FBF3EC",
@@ -122,9 +123,10 @@ TAIL_SPLINE = [                        # bends gently near the root (the thick t
 # --------------------------------------------------------------------------------------
 _A = math.radians(40.0)
 _ARM_DIR = (math.sin(_A), 0.0, -math.cos(_A))
-SHOULDER = (0.118, -0.058, 0.346)      # upperArm pivot (fox's left), front-side of the chest
+SHOULDER = (0.124, -0.022, 0.334)      # upperArm pivot (fox's left): body side, under the scarf
 LEG_X = 0.088                          # thick legs a little apart: a clear rounded notch between
-ARM_LEN = (0.072, 0.060, 0.048)        # upperArm, forearm, paw: short stubs like the art
+ARM_LEN = (0.083, 0.069, 0.055)        # upperArm, forearm, paw: short stubs like the art
+PAW_OFFSET = 0.034                     # wrist -> paw centre along the arm
 
 
 def _along(p, d, length):
@@ -148,7 +150,7 @@ def paw_frame(side="L"):
     up = np.array(SHOULDER)
     ax = np.array(_ARM_DIR)
     wr = up + ax * (ARM_LEN[0] + ARM_LEN[1])
-    pc = wr + ax * 0.030
+    pc = wr + ax * PAW_OFFSET
     x = np.cross(ax, (0.0, -1.0, 0.0)); x /= np.linalg.norm(x)
     z = np.cross(x, ax)
     return {"centre": pc, "x": x, "y": ax, "z": z}
@@ -181,7 +183,7 @@ def bone_table() -> dict:
     b["mouthOpen"] = ("head", (mx, -0.215, mz), (mx, -0.215, mz + 0.04))
     for s, sx in (("L", 1), ("R", -1)):
         # shoulder pivot on the body's side surface, just under the scarf ring
-        sh = (sx * 0.052, -0.040, 0.354)
+        sh = (sx * 0.050, -0.022, 0.352)
         up = (sx * SHOULDER[0], SHOULDER[1], SHOULDER[2])
         d = (sx * _ARM_DIR[0], _ARM_DIR[1], _ARM_DIR[2])
         el = _along(up, d, ARM_LEN[0])

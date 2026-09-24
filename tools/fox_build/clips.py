@@ -14,7 +14,7 @@ import numpy as np
 
 from . import config as C
 from .anim import IDENT, make_action, qeuler, qmirror, qmul, qnorm
-from .poses import ArmSolver, Pose, Rig, Skin, aim_bone, arm_ik, blend, ground, qrot, vis_of
+from .poses import ArmSolver, Pose, Rig, Skin, _q2m, aim_bone, arm_ik, blend, ground, qrot, vis_of
 
 FPS = C.FPS
 STEP = 1  # key every frame (linear interpolation) -> no spline overshoot between keys
@@ -128,11 +128,19 @@ class Lib:
         solver. aim: desired paw direction (rest space)."""
         global _CACHE
         _CACHE = _CACHE or _SolveCache()
+        paw_centre = np.asarray(paw_centre, float)
+        # the shoulders sit at the body's sides under the scarf; reaching in front of the chest
+        # they roll forward (protraction, up to 30 deg) so the short arms still meet there
+        sx = 1.0 if side == "L" else -1.0
+        fwd = float(np.clip((-paw_centre[1] - 0.10) / 0.12, 0.0, 1.0))
+        if fwd > 1e-3:
+            p.add(f"shoulder_{side}", z=-sx * 30.0 * fwd)
         # short stubby arms: pull targets beyond a slightly bent arm's reach in along the
         # shoulder -> target line (keeps the pose's direction instead of trading it for aim)
-        sh = np.array(C.SHOULDER) * np.array([1.0 if side == "L" else -1.0, 1.0, 1.0])
-        v = np.asarray(paw_centre, float) - sh
-        reach = 0.95 * (C.ARM_LEN[0] + C.ARM_LEN[1] + 0.026)
+        Qw, Hw = self.rig.fk(p)
+        sh = (Hw[f"upperArm_{side}"] - Hw["chest"]) @ _q2m(Qw["chest"]) + self.rig.head["chest"]
+        v = paw_centre - sh
+        reach = 0.95 * (C.ARM_LEN[0] + C.ARM_LEN[1] + C.PAW_OFFSET)
         if np.linalg.norm(v) > reach:
             paw_centre = sh + v * (reach / np.linalg.norm(v))
         tgt = in_chest(self.rig, p, paw_centre)
@@ -156,11 +164,12 @@ class Lib:
         return Pose()
 
     def stand(self):
-        """Neutral standing pose: arms relaxed at the sides, paws resting on the belly sides."""
+        """Neutral standing pose: arms hanging at the body's sides, a little behind the belly's
+        front, so the scarf is never covered."""
         p = Pose()
         p.set("ear_L", y=-4, mirror=True)
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.212, -0.092, 0.180), aim=(sx * 0.20, -0.30, -1.0))
+            self.arm(p, s, (sx * 0.228, -0.020, 0.185), aim=(sx * 0.15, 0.05, -1.0))
         return p
 
     def clasp(self, p=None, **kw):

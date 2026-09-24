@@ -8,7 +8,7 @@ import numpy as np
 
 from . import config as C
 from . import sdf as S
-from .shapes import (EAR_LEN, _arm_pts, ear_inner, ear_local, ear_outer, head_core)
+from .shapes import (EAR_LEN, _arm_pts, _leg_pts, ear_inner, ear_local, ear_outer, head_core)
 
 P = C.P
 
@@ -140,14 +140,24 @@ def arm_weights(V, side="L"):
 
 
 def leg_colors(V, N, side="L"):
-    """The feet (the legs themselves are part of the body surface)."""
+    """The feet (the legs themselves are part of the body surface). The underside (seen when
+    sitting / jumping) is a lighter warm orange with soft pads, so it never reads dark."""
     z = V[:, 2]
     col = np.tile(C.linear("orange_light"), (len(V), 1))
     col = _mix(col, C.linear("orange"), 0.9 * S.smoothstep(0.092, 0.035, z))
-    # sole + toe beans slightly deeper
-    sole = S.smoothstep(0.012, 0.004, z)
-    col = _mix(col, C.linear("sole"), 0.6 * sole)
-    return col
+    # direction from the foot centre, normalised by the foot size (toes at -y)
+    hip, knee, ankle, toe = _leg_pts(side)
+    fx, fy, fz = P["foot_size"]
+    u = (V - np.array([ankle[0], -0.030, fz * 0.5])) / (np.array([fx, fy, fz]) * 0.5)
+    u /= np.maximum(np.linalg.norm(u, axis=1, keepdims=True), 1e-9)
+    sole = S.smoothstep(-0.25, -0.60, u[:, 2])                 # lower half of the foot
+    col = _mix(col, C.linear("sole"), 0.85 * sole)
+    pads = [((0.0, 0.34, -0.94), 0.46)] + [((gx, -0.60, -0.80), 0.24) for gx in (-0.44, 0.0, 0.44)]
+    pad = np.zeros(len(V))
+    for c, r in pads:
+        c = np.array(c) / np.linalg.norm(c)
+        pad = np.maximum(pad, S.smoothstep(r, r * 0.72, np.linalg.norm(u - c, axis=1)))
+    return _mix(col, C.linear("sole_pad"), 0.8 * pad * sole)
 
 
 def leg_weights(V, side="L"):
