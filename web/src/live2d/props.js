@@ -335,7 +335,6 @@ export class Logo2D {
     }
   }
 
-
   /** Star position (look-at target) in model units. */
   starPosition(out = [0, 0]) {
     const p = this.pieces.Star;

@@ -719,8 +719,9 @@ def make_clips(rig: Rig):
     tb.add("head", x=12).add("neck", x=4)
     tb.set("ear_L", x=6, y=-4); tb.set("ear_R", x=6, y=4)
     for s, sx in (("L", 1), ("R", -1)):
-        # back rows of the (bigger) keyboard: spec.keyboard, top ~0.23 there, back edge y -0.20
-        L.arm(tb, s, (sx * 0.080, -0.236, 0.272), aim=(-sx * 0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
+        # back rows of the (bigger) keyboard, which tilts its keys toward the viewer: the rows
+        # nearest the fox are the highest (top ~0.255 there, back edge y -0.20)
+        L.arm(tb, s, (sx * 0.080, -0.236, 0.292), aim=(-sx * 0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
     def typing_pose(sl, dl, sr, dr):
         """s*: sideways step along the keys (deg, + = outward); d*: 1 = key pressed, 0 = lifted."""
         p = tb.copy()
