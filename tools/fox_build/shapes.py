@@ -70,9 +70,9 @@ def _ear_shape(q, inner=False):
     parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
     hw = P["ear_base_width"] / 2
     fz = 0.62                                     # cone flattening front-back
-    r_tip = 0.021                                 # fairly pointed tip
+    r_tip = 0.025                                 # softly pointed tip
     if inner:
-        rim = 0.020                               # slim cream rim around a big orange scoop
+        rim = 0.024                               # cream rim around a big orange scoop
         qi = q.copy()
         qi[:, 2] = (q[:, 2] - 0.025) / fz
         cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.042, 0), hw - rim, r_tip * 0.5) * fz
@@ -146,20 +146,15 @@ def _arm_pts(side="L"):
 def arm_sdf(p, side="L"):
     sh, el, wr, tip = _arm_pts(side)
     ar = P["arm_radius"]; pr = P["paw_radius"]
-    # one smooth, thick, slightly tapered stub shoulder -> wrist (the bend comes from skinning)
-    d = S.round_cone(p, sh, wr, ar, ar * 0.87)
+    # one smooth, slightly tapered stub shoulder -> wrist (the bend comes from skinning)
+    d = S.round_cone(p, sh, wr, ar, ar * 0.88)
     f = C.paw_frame(side)
-    # mitten paw: a rounded bulb barely wider than the wrist (x across, y along, z back of hand)
+    # smooth mitten paw: a rounded bulb barely wider than the wrist (x across, y along, z back)
     o, R = S.frame(f["centre"], f["x"], f["y"])
     ql = S.to_local(p, o, R)
     paw = S.ellipsoid(ql, (0, 0.002, 0), (pr * 1.0, pr * 1.04, pr * 0.86))
     d = S.smin(d, paw, 0.03)
     d = S.smin(d, S.sphere(p, sh, ar * 1.02), 0.02)  # ball root at the shoulder pivot
-    # two toe grooves over the tip on the back of the paw, like the feet
-    for gx in (-0.017, 0.017):
-        a = f["centre"] + f["x"] * gx + f["z"] * pr * 0.74 + f["y"] * pr * 0.10
-        b = f["centre"] + f["x"] * gx * 1.06 + f["y"] * pr * 0.95 + f["z"] * pr * 0.26
-        d = S.ssub(d, S.capsule(p, a, b, 0.0042), 0.006)
     return d
 
 

@@ -72,10 +72,10 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.165, 0.014, 0.800),
-    "ear_tip": (0.250, 0.036, 1.000),       # ~21 deg out from vertical, like the art
-    "ear_base_width": 0.200,                # tall, fairly narrow pointed ears (w/h ~0.85)
-    "ear_thickness": 0.072,
+    "ear_base": (0.168, 0.014, 0.800),
+    "ear_tip": (0.268, 0.036, 1.012),       # ~25 deg out from vertical, like the art
+    "ear_base_width": 0.232,                # big, tall rounded-point ears (w/h ~0.95)
+    "ear_thickness": 0.076,
     # face anchors (x, z); y is projected onto the head surface at build time
     "eye_xz": (0.119, 0.590),
     "eye_size": (0.067, 0.080),               # width, height of the open eye
@@ -94,8 +94,8 @@ P = {
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
     "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.063,
-    "paw_radius": 0.056,
+    "arm_radius": 0.055,
+    "paw_radius": 0.054,
     "leg_radius": 0.066,
     "foot_size": (0.122, 0.132, 0.084),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]

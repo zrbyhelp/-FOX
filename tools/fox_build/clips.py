@@ -128,6 +128,13 @@ class Lib:
         solver. aim: desired paw direction (rest space)."""
         global _CACHE
         _CACHE = _CACHE or _SolveCache()
+        # short stubby arms: pull targets beyond a slightly bent arm's reach in along the
+        # shoulder -> target line (keeps the pose's direction instead of trading it for aim)
+        sh = np.array(C.SHOULDER) * np.array([1.0 if side == "L" else -1.0, 1.0, 1.0])
+        v = np.asarray(paw_centre, float) - sh
+        reach = 0.95 * (C.ARM_LEN[0] + C.ARM_LEN[1] + 0.026)
+        if np.linalg.norm(v) > reach:
+            paw_centre = sh + v * (reach / np.linalg.norm(v))
         tgt = in_chest(self.rig, p, paw_centre)
         aim_w = dir_chest(self.rig, p, aim) if aim is not None else None
         if kw.get("palm") is not None:
