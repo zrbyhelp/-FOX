@@ -101,7 +101,7 @@ def body_weights(V):
         W[k] = W[k] / s * (1 - leg)
     W["breath"] *= 1 - _leg_share(V)
     shin = leg * S.smoothstep(0.118, 0.070, z)
-    wl = S.smoothstep(-0.05, 0.05, x)
+    wl = S.smoothstep(-0.045, 0.045, x)
     for side, w in (("L", wl), ("R", 1 - wl)):
         W[f"thigh_{side}"] = (leg - shin) * w
         W[f"shin_{side}"] = shin * w
