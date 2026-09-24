@@ -502,6 +502,7 @@ export class TypingController {
     this.nextLineAt = 0;
     this.keystrokes = 0;
     this.listeners = new Set();
+    this.enabled = true;
     target.addEventListener('keydown', (e) => this.onKeyDown(e));
     target.addEventListener('keyup', (e) => this.keyboard.release(e.code));
     target.addEventListener('blur', () => this.keyboard.releaseAll());
@@ -520,6 +521,7 @@ export class TypingController {
   }
 
   onKeyDown(e) {
+    if (!this.enabled) return; // 2D mode: the 2D fox listens to the keyboard itself
     if (isEditable(e.target) || isEditable(document.activeElement)) return;
     if (MODIFIERS.has(e.code) || MODIFIER_KEYS.has(e.key)) return;
     if (e.ctrlKey || e.metaKey || e.altKey) return; // shortcuts, not typing

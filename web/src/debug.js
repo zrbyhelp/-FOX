@@ -37,6 +37,10 @@ export function installDebug(app) {
   }
 
   window.__fox = {
+    /** 3D / 2D switch (resolves with the mode shown); live2d: the 2D app once created. */
+    setMode: (m) => app.setMode(m),
+    get mode() { return app.mode; },
+    get live2d() { return app.live2d; },
     get clips() { return fox.clips; },
     clipInfo: () => fox.clips.map((name) => ({ name, ...fox.meta[name] })),
     get state() { return animator.state; },

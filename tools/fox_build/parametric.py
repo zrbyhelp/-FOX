@@ -261,26 +261,13 @@ def scarf_flap_mesh(n_len=44, n_seg=40, u_repeat=3.0):
 
 def scarf_flap_spheres(n_across=9):
     """Mid-surface sample points of the hanging flap (rest pose) and their length parameter;
-    a union of spheres of radius FLAP_HT around them approximates the flap's volume."""
+    a union of spheres of radius FLAP_HT around them approximates the flap's volume
+    (clips.FlapGuard, clip_qa)."""
     rad, tang, centers = scarf_flap_mesh()[-1]
     w = np.linspace(-(FLAP_HW - FLAP_HT), FLAP_HW - FLAP_HT, n_across)
     pts = (centers[:, None, :] + w[None, :, None] * tang).reshape(-1, 3)
     vp = np.repeat(np.linspace(0.0, 1.0, len(centers)), n_across)
     return pts, vp
-
-
-def scarf_flap_sdf(n_across=9, inflate=0.008):
-    """Approximate SDF of the flap in the rest pose. The arm solver adds it to the body so
-    forearms crossing the chest rest on top of the flap instead of cutting through it
-    (inflated: the solver only tests a sparse subset of the arm vertices)."""
-    from scipy.spatial import cKDTree
-    tree = cKDTree(scarf_flap_spheres(n_across)[0])
-
-    def sdf(p):
-        p = np.asarray(p, float)
-        d, _ = tree.query(p.reshape(-1, 3))
-        return (d - FLAP_HT - inflate).reshape(p.shape[:-1])
-    return sdf
 
 
 def scarf_flap_weights(vp):

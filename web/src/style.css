@@ -221,6 +221,50 @@ body {
   background: rgba(255, 238, 222, 0.8);
 }
 
+/* 3D / 2D switch: a small segmented control at the start of the settings group. */
+.mode-switch {
+  flex: none;
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: 999px;
+  background: rgba(255, 248, 241, 0.9);
+  border: 1px solid var(--cream-edge);
+}
+.mode-switch .seg {
+  appearance: none;
+  border: 0;
+  border-radius: 999px;
+  padding: 5px 11px;
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 1.2;
+  color: var(--ink-soft);
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.18s, color 0.18s, box-shadow 0.18s;
+}
+.mode-switch .seg:hover {
+  color: var(--ink);
+}
+.mode-switch .seg[aria-checked='true'] {
+  color: #fff;
+  background: var(--orange);
+  box-shadow: 0 2px 6px rgba(240, 126, 62, 0.35);
+}
+.mode-switch .seg:focus-visible {
+  outline: 2px solid var(--orange);
+  outline-offset: 1px;
+}
+
+/* The 2D puppet's canvas sits under the dock and the bubble. */
+.stage2d {
+  position: fixed;
+  inset: 0;
+}
+
 /* Settings shrink to icons when space is tight (label kept for screen readers via aria-label). */
 @media (max-width: 1199px) {
   .pill.setting {

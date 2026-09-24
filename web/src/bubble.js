@@ -48,6 +48,13 @@ export class Bubble {
     this.offscreenFor = 0;
     this.size = { w: 0, h: 0 };
     this.shown = 0; // bubbles shown so far (tests)
+    this.source = null; // 2D mode: { anchor(), logoRect() } in client px instead of the 3D head
+  }
+
+  /** Anchor the bubble to another fox (the 2D puppet), or back to the 3D head with null. */
+  setSource(source) {
+    this.source = source;
+    this.clear();
   }
 
   /**
@@ -147,6 +154,7 @@ export class Bubble {
 
   /** Head centre and silhouette radius in CSS px. */
   anchor() {
+    if (this.source) return this.source.anchor();
     const rect = this.canvas.getBoundingClientRect();
     const toScreen = (p) => ({ x: rect.left + ((p.x + 1) / 2) * rect.width, y: rect.top + ((1 - p.y) / 2) * rect.height });
     const head = this.head;
@@ -163,6 +171,7 @@ export class Bubble {
   }
 
   logoRect() {
+    if (this.source) return this.source.logoRect?.() ?? null;
     if (!this.logoCenter) return null;
     const p = this.logoCenter(_v);
     if (!p) return null;

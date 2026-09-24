@@ -770,6 +770,21 @@ export async function createLive2DApp({
     get running() { return S.running; },
     setLookEnabled(on) { S.lookEnabled = !!on; },
     setTalking(on) { S.talking = !!on; },
+    /**
+     * Client-px anchors for host overlays (the shared speech bubble): the posed head centre with
+     * its silhouette radius, and the logo's box. Cheap (no hit-testing), call every frame.
+     */
+    anchors() {
+      const h = rig.point('headCenter', [0, 0]);
+      const c = puppet.toClient(h[0], h[1]);
+      const e = puppet.toClient(h[0] + 0.3, h[1]);
+      const r = Math.max(12, Math.abs(e.x - c.x));
+      const onScreen = !controller.hidden && c.x > -r * 0.3 && c.x < window.innerWidth + r * 0.3 && c.y > -r && c.y < window.innerHeight;
+      const lc = puppet.toClient(logo.center[0], logo.center[1]);
+      const le = puppet.toClient(logo.center[0] + 0.22, logo.center[1]);
+      const lr = Math.abs(le.x - lc.x);
+      return { head: { x: c.x, y: c.y, r, onScreen }, logo: { x: lc.x - lr, y: lc.y - lr, w: 2 * lr, h: 2 * lr } };
+    },
     setInsetBottom(px) {
       puppet.insetBottom = Math.max(0, px || 0);
       resize();

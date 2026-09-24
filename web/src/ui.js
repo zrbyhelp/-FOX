@@ -102,9 +102,11 @@ export function createLoader() {
  * @param {(name:string)=>boolean} o.has
  * @param {(on:boolean)=>void} o.onFollow
  * @param {()=>void} o.onResetView
- * @returns {{ height: () => number, update: (s: object) => void }}
+ * @param {(mode:'3d'|'2d')=>void} [o.onMode]  3D model / Live2D-style 2D puppet switch
+ * @param {'3d'|'2d'} [o.mode]
+ * @returns {{ height: () => number, update: (s: object) => void, setMode: (m: string) => void }}
  */
-export function createUI({ trigger, has, onFollow, onResetView }) {
+export function createUI({ trigger, has, onFollow, onResetView, onMode = null, mode = '3d' }) {
   const buttons = new Map();
   const groups = GROUPS.map((g) => {
     const items = g.items.map((a) => {
@@ -138,7 +140,28 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
   const reset = makeButton({ id: 'resetView', label: '重置视角', icon: 'reset', tip: '回到默认视角', className: 'pill ghost setting' });
   reset.setAttribute('aria-label', '重置视角');
   reset.addEventListener('click', onResetView);
-  const settings = el('div', { className: 'group settings' }, [follow, reset]);
+  // 3D / 2D segmented switch (radio semantics, arrow keys move between the two)
+  const modeBtns = ['3d', '2d'].map((m) => {
+    const b = el('button', { type: 'button', className: 'seg', textContent: m.toUpperCase() });
+    b.dataset.mode = m;
+    b.setAttribute('role', 'radio');
+    b.title = m === '3d' ? '3D 模型:可以拖动旋转视角' : 'Live2D 风格的 2D 版本';
+    b.addEventListener('click', () => onMode?.(m));
+    b.addEventListener('keydown', (e) => {
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
+        e.preventDefault();
+        const other = modeBtns.find((x) => x !== b);
+        other.focus();
+        onMode?.(other.dataset.mode);
+      }
+    });
+    return b;
+  });
+  const modeSwitch = el('div', { className: 'mode-switch' }, modeBtns);
+  modeSwitch.setAttribute('role', 'radiogroup');
+  modeSwitch.setAttribute('aria-label', '显示模式');
+  const settingItems = onMode ? [modeSwitch, follow, reset] : [follow, reset];
+  const settings = el('div', { className: 'group settings' }, settingItems);
   settings.setAttribute('role', 'group');
   settings.setAttribute('aria-label', '设置');
 
@@ -153,7 +176,18 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
   const bar = el('div', { className: 'toolbar' }, parts);
   bar.setAttribute('role', 'toolbar');
   bar.setAttribute('aria-label', '小狐狸动作');
-  const hint = el('p', { className: 'hint', textContent: '拖动旋转视角 · 点我互动 · 拖拖尾巴 · 敲键盘一起打字' });
+  const HINTS = { '3d': '拖动旋转视角 · 点我互动 · 拖拖尾巴 · 敲键盘一起打字', '2d': '点我互动 · 摸摸头 · 拖拖尾巴 · 敲键盘一起打字' };
+  const hint = el('p', { className: 'hint', textContent: HINTS['3d'] });
+  function setMode(m) {
+    for (const b of modeBtns) {
+      const on = b.dataset.mode === m;
+      b.setAttribute('aria-checked', String(on));
+      b.tabIndex = on ? 0 : -1;
+    }
+    hint.textContent = HINTS[m] || HINTS['3d'];
+    reset.title = m === '2d' ? '重新摆正小狐狸' : '回到默认视角';
+    dock.dataset.mode = m;
+  }
   const dock = el('div', { className: 'dock' }, [hint, el('div', { className: 'bar-wrap' }, [bar])]);
   document.body.append(dock);
 
@@ -181,5 +215,6 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
     dock.classList.toggle('away', s.state === 'Away');
   }
 
-  return { height: () => dock.getBoundingClientRect().height, update };
+  setMode(mode);
+  return { height: () => dock.getBoundingClientRect().height, update, setMode };
 }

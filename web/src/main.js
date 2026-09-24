@@ -1,7 +1,8 @@
 // Bootstrap: load everything, warm up shaders, run the frame loop.
 //
 // URL parameters: ?model=dev/m1.glb  ?quality=low  ?noui=1  ?debug=1 (freeze auto behaviours,
-// preserve drawing buffer)  ?logo=procedural (ignore logo.glb)
+// preserve drawing buffer)  ?logo=procedural (ignore logo.glb)  ?mode=2d (start with the
+// Live2D-style 2D puppet; the toolbar's 3D / 2D switch toggles at any time)
 import * as THREE from 'three';
 import spec from '../../spec.json';
 import { createStage, createBlobShadow } from './scene.js';
@@ -16,6 +17,7 @@ import { MagicKeyboard, TypingController } from './keyboard.js';
 import { HeartFx } from './heartfx.js';
 import { createUI, createLoader } from './ui.js';
 import { installDebug, makeRng } from './debug.js';
+import { createLive2DApp } from './live2d/app.js';
 
 const params = new URLSearchParams(location.search);
 const debug = params.get('debug') === '1';
@@ -24,6 +26,7 @@ const quality = params.get('quality') === 'low' ? 'low' : 'high';
 const modelFile = params.get('model') || 'fox.glb';
 const clipsFile = modelFile === 'fox.glb' ? 'clips.json' : modelFile.replace(/\.glb$/, '.clips.json');
 const reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
+const startMode = params.get('mode') === '2d' ? '2d' : '3d';
 
 const easeOutBack = (x, s = 1.7) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
 const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
@@ -89,12 +92,26 @@ async function main() {
   let userMoved = false;
   controls.addEventListener('start', () => { userMoved = true; });
   let ui = null;
+  let follow = true;
+  // 3D <-> 2D: `twoD` is the Live2D-style puppet (created on first use), `mode` what is shown.
+  let mode = '3d';
+  let twoD = null;
   if (!noUI) {
     ui = createUI({
-      trigger: (name) => interaction.trigger(name),
+      trigger: (name) => (mode === '2d' ? trigger2D(name) : interaction.trigger(name)),
       has: (name) => animator.has(name),
-      onFollow: (on) => { interaction.followPointer = on; },
-      onResetView: () => { userMoved = false; stage.setView('ref34'); },
+      onFollow: (on) => {
+        follow = on;
+        interaction.followPointer = on;
+        twoD?.app.setLookEnabled(on);
+      },
+      onResetView: () => {
+        if (mode === '2d') return twoD?.app.resize();
+        userMoved = false;
+        stage.setView('ref34');
+      },
+      onMode: (m) => setMode(m),
+      mode: '3d',
     });
   }
   const insetBottom = () => (ui ? ui.height() + 8 : 0);
@@ -111,6 +128,7 @@ async function main() {
     stage.resize();
     stage.setInsetBottom(insetBottom());
     if (!userMoved) stage.setView(stage.viewName);
+    twoD?.app.setInsetBottom(insetBottom());
   };
   window.addEventListener('resize', layout);
   layout();
@@ -215,6 +233,9 @@ async function main() {
   const app = {
     stage, fox, logo, animator, procedural, interaction, rng, dozeFx, updateShadows, materials, step,
     bubble, keyboard, typing, heartFx, hooks, foxShadow,
+    setMode,
+    get mode() { return mode; },
+    get live2d() { return twoD?.app ?? null; },
     startLoop() {
       if (running) return;
       running = true;
@@ -229,6 +250,113 @@ async function main() {
       applyPresence();
     },
   };
+
+  // ---- 3D / 2D switch --------------------------------------------------------------------------
+  // The 2D puppet (src/live2d/app.js) shares the toolbar, the speech bubble (anchored to its head)
+  // and the lines; it listens to the keyboard itself while shown. Only one fox runs at a time.
+  const stage2d = document.createElement('div');
+  stage2d.className = 'stage2d';
+  stage2d.hidden = true;
+  canvas.after(stage2d); // under the dock and the bubble
+
+  async function ensure2D() {
+    if (twoD) return twoD;
+    const app2d = await createLive2DApp({
+      container: stage2d, spec, insetBottom: insetBottom(), keyboard: true, debug,
+      seed: debug ? 1 : undefined,
+    });
+    const t = { app: app2d, intent: null, typing: false, time: 0, raf: 0, last: 0 };
+    app2d.setLookEnabled(follow);
+    app2d.onEvent((e) => {
+      if (mode !== '2d') return;
+      if (e.type === 'clip') {
+        t.intent = e.intent;
+        const line = LINES[e.intent];
+        if (line) bubble.say(line.text, line);
+      } else if (e.type === 'typing') {
+        t.typing = e.active;
+        if (e.active) bubble.say('我来帮你一起打字!', { cooldown: 20, maxWait: 1.5 });
+      } else if (e.type === 'state' && e.to === 'Away') bubble.clear();
+    });
+    // host loop while 2D is shown: bubble placement + toolbar state (the puppet runs its own loop)
+    const tick = (now) => {
+      if (mode !== '2d') return;
+      t.raf = requestAnimationFrame(tick);
+      const dt = Math.min(0.1, Math.max(0, (now - (t.last || now)) / 1000));
+      t.last = now;
+      app2d.setTalking(bubble.talking);
+      bubble.update(dt);
+      const st = app2d.state;
+      ui?.update({
+        state: st, clip: app2d.clip, intent: t.intent, phase: app2d.clip === 'Sit_Doze' ? 'doze' : '',
+        typing: t.typing, demo: false,
+      });
+    };
+    t.startHost = () => { t.last = 0; t.raf = requestAnimationFrame(tick); };
+    t.stopHost = () => cancelAnimationFrame(t.raf);
+    twoD = t;
+    return t;
+  }
+
+  function trigger2D(name) {
+    const a = twoD?.app;
+    if (!a) return null;
+    if (name === 'TypeDemo') return a.request('Type');
+    if (name === 'Presence') return a.request(a.state === 'Away' ? 'Enter' : 'Exit');
+    return a.request(name);
+  }
+
+  let switching = null;
+  async function setMode(to) {
+    if (to !== '2d' && to !== '3d') return mode;
+    if (switching) await switching;
+    if (to === mode) return mode;
+    switching = (async () => {
+      if (to === '2d') {
+        let t;
+        try {
+          t = await ensure2D();
+        } catch (err) {
+          console.error(err);
+          ui?.setMode('3d');
+          return;
+        }
+        app.stopLoop();
+        typing.enabled = false;
+        keyboard.group.visible = keyboard.shadow.visible = false;
+        heartFx.clear();
+        canvas.style.visibility = 'hidden';
+        stage2d.hidden = false;
+        mode = '2d';
+        bubble.setSource({ anchor: () => t.app.anchors().head, logoRect: () => t.app.anchors().logo });
+        t.app.setInsetBottom(insetBottom());
+        t.app.start(); // pops in and waves
+        t.startHost();
+      } else {
+        twoD.stopHost();
+        twoD.app.stop();
+        stage2d.hidden = true;
+        canvas.style.visibility = '';
+        mode = '3d';
+        bubble.setSource(null);
+        typing.enabled = true;
+        app.startLoop();
+        if (animator.state === 'Idle') interaction.trigger('Wave');
+      }
+      ui?.setMode(mode);
+      try {
+        const u = new URL(location.href);
+        if (mode === '2d') u.searchParams.set('mode', '2d');
+        else u.searchParams.delete('mode');
+        history.replaceState(null, '', u);
+      } catch {
+        // sandboxed previews may refuse history changes
+      }
+    })();
+    await switching;
+    switching = null;
+    return mode;
+  }
 
   // ---- warm-up: compile every program (incl. shadow + sprite) before the first real frame ----
   fox.root.scale.setScalar(0.001);
@@ -247,6 +375,7 @@ async function main() {
   applyPresence();
   app.startLoop();
   installDebug(app);
+  if (startMode === '2d') await setMode('2d');
   loaderUI?.done();
   window.__foxReady = true;
 }
