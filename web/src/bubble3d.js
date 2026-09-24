@@ -255,7 +255,7 @@ export class Bubble3D {
       specularIntensity: 0.2,
       envMapIntensity: 0.72, // less flat ambient: the lights model the rim light / dark
       emissive: new THREE.Color(CREAM),
-      emissiveIntensity: 0.06,
+      emissiveIntensity: 0.08, // stays a cheerful cream when lit from behind
       transparent: true, // fades out
     });
     this.textMat = new THREE.MeshBasicMaterial({
@@ -318,8 +318,9 @@ export class Bubble3D {
     this.tailX = 0;
     this.tailXGoal = 0;
     this.tailFlip = 1;
-    this.aim = -0.9; // tail rotation (rad, 0 = straight down)
-    this.aimGoal = -0.9;
+    this.aim = -0.6; // tail rotation (rad, 0 = straight down)
+    this.aimGoal = -0.6;
+    this.snapAim = true;
     this.mouth = { x: 0, y: 0 }; // px the tail points at
     this.bounds = { vw: 1, vh: 1, edge: 10 };
     this.rect = null; // full-size screen rect (client px)
@@ -378,9 +379,10 @@ export class Bubble3D {
     const geo = this.bodyGeometry(W, lines.length);
     this.body.geometry = geo;
     this.dims = geo.userData;
-    // 2-2.5x the on-screen pixel density (mipmapped): crisp, no shimmer while it scales
+    // 2x the on-screen pixel density (mipmapped: the first mip level lands ~1:1 on screen): crisp,
+    // no shimmer while it pops / scales
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const emPx = THREE.MathUtils.clamp(Math.round(EM * this.boost * this.ppu * dpr * 2.3), 36, 128);
+    const emPx = THREE.MathUtils.clamp(Math.round(EM * this.boost * this.ppu * dpr * 2), 36, 128);
     const t = textTexture(lines, emPx);
     this.textTex?.dispose();
     this.textTex = t.tex;
@@ -445,7 +447,7 @@ export class Bubble3D {
     this.pivot.set(x, -H / 2 + PIVOT_UP);
     this.tailX = this.tailXGoal = x;
     this.inner.position.set(-x, -this.pivot.y, 0);
-    this.aim = this.aimGoal;
+    this.snapAim = true; // new side: the tail starts at its angle, no swing
   }
 
   /** Head x in body coordinates (for a tail above the head). */
@@ -555,11 +557,14 @@ export class Bubble3D {
     const r = this.canvas.getBoundingClientRect();
     const px = r.left + ((_c.x + 1) / 2) * r.width;
     const py = r.top + ((1 - _c.y) / 2) * r.height;
-    const flip = this.side === 'left' ? -1 : this.side === 'right' ? 1 : this.mouth.x < px ? 1 : -1;
-    const range = this.side === 'right' ? [-0.9, -0.2] : this.side === 'left' ? [0.2, 0.9] : [-0.6, 0.6];
+    // above the head: bend towards the side the head is on (with a little hysteresis)
+    const dxm = this.mouth.x - px;
+    const flip = this.side === 'left' ? -1 : this.side === 'right' ? 1 : Math.abs(dxm) < 4 ? this.tailFlip : dxm < 0 ? 1 : -1;
+    const range = this.side === 'right' ? [-0.85, -0.2] : this.side === 'left' ? [0.2, 0.85] : [-0.6, 0.6];
     const want = THREE.MathUtils.clamp(Math.atan2(this.mouth.x - px, this.mouth.y - py), range[0], range[1]);
     this.aimGoal = want - flip * this.tailBend; // the tip leans by tailBend already
-    this.aim += (this.aimGoal - this.aim) * (1 - Math.exp(-dt * 12));
+    this.aim = this.snapAim ? this.aimGoal : this.aim + (this.aimGoal - this.aim) * (1 - Math.exp(-dt * 12));
+    this.snapAim = false;
     this.tailFlip = flip;
 
     // keep the whole bubble (at full size) inside the viewport, above the toolbar

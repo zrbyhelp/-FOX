@@ -10,7 +10,7 @@ import * as THREE from 'three';
 
 const EDGE = 10; // px kept free along the viewport edges
 const OUT_TIME = 0.22; // s, pop-out (must match the CSS bubble-out animation)
-export const HEAD_RADIUS = 0.25; // world units, roughly the head's silhouette radius
+const HEAD_RADIUS = 0.25; // world units, roughly the head's silhouette radius
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
