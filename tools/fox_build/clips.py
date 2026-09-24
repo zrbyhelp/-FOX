@@ -225,8 +225,8 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=8, z=-42)
-        tail_curve(p, x=-4, z=-16, start=2, falloff=0.95)
+        p.set("tail_1", x=12, z=-4)                        # straight out of the butt first...
+        tail_curve(p, x=-5, z=-24, start=2, falloff=0.95)  # ...then curl round to the side
         return p
 
     def stand_legs(self, p):
@@ -560,7 +560,7 @@ def make_clips(rig: Rig):
     tail_curve(j_up, x=-10, start=2, falloff=0.9)
     j_land = squat.copy(); j_land.expression(eyes="happy")
     for s, sx in (("L", 1), ("R", -1)):
-        L.arm(j_land, s, (sx * 0.265, -0.090, 0.330), aim=(sx * 1.0, -0.2, 0.3))
+        L.arm(j_land, s, (sx * 0.272, -0.100, 0.410), aim=(sx * 0.8, -0.2, 0.6))   # arms still up-ish on landing
     T_SQ, T_TAKE, T_LAND, T_SET = 0.32, 0.36, 0.90, 1.12
     def jump_root(t):
         # squat -> take-off -> airborne arc (peak ~0.14) -> landing squash -> settle

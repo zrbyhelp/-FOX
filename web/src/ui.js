@@ -57,7 +57,7 @@ const GROUPS = [
 
 // Animator state / intent -> the button whose action is playing.
 function activeButton(s) {
-  if (s.state === 'Exiting' || s.state === 'Entering') return 'Presence';
+  if (s.state === 'Exiting' || (s.state === 'Entering' && s.intent !== 'Intro')) return 'Presence';
   if (s.state === 'Typing' || s.typing) return 'TypeDemo';
   if (s.state === 'Sitting') return s.phase === 'doze' || s.clip === 'Sit_Doze' ? 'Doze' : 'Sit';
   if (s.state === 'OneShot') return s.intent;
@@ -157,8 +157,11 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
   const typeBtn = buttons.get('TypeDemo').b;
   function update(s) {
     const away = s.state === 'Away' || s.state === 'Exiting';
+    // The presence button names what is playing (离场 while leaving, 回来 while coming back),
+    // otherwise what it will do.
+    const back = s.state === 'Away' || (s.state === 'Entering' && s.intent !== 'Intro');
     const active = activeButton(s);
-    const key = `${active}|${away}|${s.state}|${!!s.demo}|${!!s.typing}`;
+    const key = `${active}|${away}|${back}|${s.state}|${!!s.demo}|${!!s.typing}`;
     if (key === last) return;
     last = key;
     for (const [id, { b }] of buttons) {
@@ -166,9 +169,9 @@ export function createUI({ trigger, has, onFollow, onResetView }) {
       if (id !== 'Presence') b.disabled = b.dataset.ok !== 'true' || away;
     }
     typeBtn.setAttribute('aria-pressed', String(!!(s.demo || s.typing)));
-    presence.querySelector('.label').textContent = away ? '回来' : '离场';
-    presence.querySelector('.ico').outerHTML = icon(away ? 'enter' : 'exit');
-    presence.title = away ? '叫小狐狸回来' : '挥手告别,离开画面';
+    presence.querySelector('.label').textContent = back ? '回来' : '离场';
+    presence.querySelector('.ico').outerHTML = icon(back ? 'enter' : 'exit');
+    presence.title = s.state === 'Away' ? '叫小狐狸回来' : s.state === 'Exiting' ? '正在离场…再点一下马上回来' : '挥手告别,离开画面';
     dock.classList.toggle('away', s.state === 'Away');
   }
 

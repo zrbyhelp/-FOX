@@ -5,9 +5,10 @@ import * as THREE from 'three';
 const SPAWN_AT = 0.45; // s into the clip
 const END_AT = 2.1; // s into the clip: pop away
 const OUT = 0.28; // s pop-away
-const SIZE = 0.1; // heart width (fox height = 1)
+const SIZE = 0.11; // heart width (fox height = 1)
 const RISE = 0.12;
-const FORWARD = 0.07; // in front of the chest
+const FORWARD = 0.05; // spawn just in front of the paws ...
+const DRIFT = 0.15; // ... then float towards the viewer, clear of the chin
 
 const easeOutBack = (x, s = 2.2) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
 
@@ -121,7 +122,7 @@ export class HeartFx {
     const fwd = this._v.set(0, 0, 1);
     if (root) fwd.applyQuaternion(root.getWorldQuaternion(new THREE.Quaternion()));
     this.origin.addScaledVector(fwd.setY(0).normalize(), FORWARD);
-    this.origin.y += 0.02;
+    this.origin.y += 0.01;
     this.t = 0;
     this.group.visible = true;
     this.shown++;
@@ -133,7 +134,7 @@ export class HeartFx {
         u.size = 0.022 + this.rng() * 0.016;
         u.sway = this.rng() * Math.PI * 2;
         u.vel.set((this.rng() - 0.5) * 0.08, 0.1 + this.rng() * 0.07, (this.rng() - 0.5) * 0.04);
-        p.position.copy(this.origin).add(this._v2.set((this.rng() - 0.5) * 0.08, (this.rng() - 0.3) * 0.05, 0));
+        p.position.copy(this.origin).add(this._v2.set((this.rng() - 0.5) * 0.1, (this.rng() - 0.3) * 0.05, 0.1));
         p.visible = false;
       });
     }
@@ -167,11 +168,15 @@ export class HeartFx {
       }
       if (this.t >= 0) {
         const rise = RISE * (1 - Math.exp(-t * 1.6));
+        const dx = camera.position.x - this.origin.x;
+        const dz = camera.position.z - this.origin.z;
+        const dl = Math.hypot(dx, dz) || 1;
+        const drift = DRIFT * (1 - Math.exp(-t * 3.5));
         this.group.position.copy(this.origin);
+        this.group.position.x += (dx / dl) * drift;
+        this.group.position.z += (dz / dl) * drift;
         this.group.position.y += rise + 0.008 * Math.sin(t * 5.5);
         // face the camera (yaw only) with a gentle wobble
-        const dx = camera.position.x - this.group.position.x;
-        const dz = camera.position.z - this.group.position.z;
         this.group.rotation.set(0, Math.atan2(dx, dz) + 0.22 * Math.sin(t * 3.1), 0.08 * Math.sin(t * 4.3));
         const beat = 1 + 0.05 * Math.max(0, Math.sin(t * 9)) * (t < life ? 1 : 0);
         this.group.scale.setScalar(Math.max(0.001, s * beat));

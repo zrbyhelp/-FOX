@@ -20,10 +20,11 @@ from fox_build.poses import Rig, Skin  # noqa: E402
 PAIRS = [
     ("Arm_L", "Body", 0.018, ("upperArm_L", 0.085)),
     ("Arm_R", "Body", 0.018, ("upperArm_R", 0.085)),
-    ("Arm_L", "Head", 0.012, None),
-    ("Arm_R", "Head", 0.012, None),
-    ("Arm_L", "ScarfFlap", 0.010, None),
-    ("Arm_R", "ScarfFlap", 0.010, None),
+    # arm roots within ~10 cm of the shoulder pivot sit under the scarf ring (hidden)
+    ("Arm_L", "Head", 0.012, ("upperArm_L", 0.10)),
+    ("Arm_R", "Head", 0.012, ("upperArm_R", 0.10)),
+    ("Arm_L", "ScarfFlap", 0.012, ("upperArm_L", 0.10)),
+    ("Arm_R", "ScarfFlap", 0.012, ("upperArm_R", 0.10)),
     ("Arm_L", "Arm_R", 0.012, None),
     ("Tail", "Body", 0.020, ("tail_1", 0.12)),
     ("Tail", "Leg_L", 0.010, None),

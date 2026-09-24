@@ -273,6 +273,7 @@ export class Procedural {
   update(dt, layers) {
     if (!this.enabled) return;
     if (this.paused) {
+      if (!this.wasPaused) this.reset(); // nothing left talking / swinging while away
       this.wasPaused = true;
       return;
     }

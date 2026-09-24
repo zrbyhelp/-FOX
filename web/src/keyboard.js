@@ -116,6 +116,77 @@ class Sparkles {
   }
 }
 
+/** Label that floats up from a pressed key (visible from the front, where the caps are not). */
+function glyphFor(code) {
+  if (/^Key[A-Z]$/.test(code)) return code.slice(3).toLowerCase();
+  if (/^Digit\d$/.test(code)) return code.slice(5);
+  return { Enter: '↵', NumpadEnter: '↵', Backspace: '←', Delete: '←', Minus: '-', Equal: '=', Comma: ',', Period: '.', Slash: '/', Semicolon: ';', Quote: "'", BracketLeft: '[', BracketRight: ']' }[code] || null;
+}
+
+class Glyphs {
+  constructor(parent, count = 10) {
+    this.cache = new Map();
+    this.pool = [];
+    for (let i = 0; i < count; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false, opacity: 0 }));
+      s.name = 'KeyGlyph';
+      s.visible = false;
+      s.userData = { life: -1, vel: new THREE.Vector3() };
+      parent.add(s);
+      this.pool.push(s);
+    }
+  }
+
+  texture(ch) {
+    if (this.cache.has(ch)) return this.cache.get(ch);
+    const c = document.createElement('canvas');
+    c.width = c.height = 64;
+    const g = c.getContext('2d');
+    g.font = '700 44px "Baloo 2", "Arial Rounded MT Bold", "PingFang SC", system-ui, sans-serif';
+    g.textAlign = 'center';
+    g.textBaseline = 'middle';
+    g.lineJoin = 'round';
+    g.lineWidth = 9;
+    g.strokeStyle = '#ffffff';
+    g.strokeText(ch, 32, 35);
+    g.fillStyle = '#e8743c';
+    g.fillText(ch, 32, 35);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    this.cache.set(ch, tex);
+    return tex;
+  }
+
+  spawn(ch, pos, rng) {
+    const s = this.pool.find((p) => p.userData.life < 0) || this.pool.reduce((a, b) => (a.userData.life > b.userData.life ? a : b));
+    s.material.map = this.texture(ch);
+    s.material.needsUpdate = true;
+    s.position.copy(pos);
+    s.userData.life = 0;
+    s.userData.vel.set((rng() - 0.5) * 0.05, 0.16 + rng() * 0.05, 0.05);
+    s.visible = true;
+  }
+
+  update(dt) {
+    for (const s of this.pool) {
+      const u = s.userData;
+      if (u.life < 0) continue;
+      u.life += dt / 0.85;
+      if (u.life >= 1) { u.life = -1; s.visible = false; continue; }
+      s.position.addScaledVector(u.vel, dt);
+      u.vel.multiplyScalar(Math.exp(-1.5 * dt));
+      const l = u.life;
+      const sc = 0.034 * Math.min(1, l * 6) * (1 - 0.3 * l);
+      s.scale.set(sc, sc, sc);
+      s.material.opacity = Math.min(1, (1 - l) * 2.5);
+    }
+  }
+
+  clear() {
+    for (const s of this.pool) { s.userData.life = -1; s.visible = false; }
+  }
+}
+
 export class MagicKeyboard {
   constructor({ spec, scene, rng = Math.random, reducedMotion = false }) {
     const k = spec.keyboard?.gltf || { position: [0, 0.235, 0.255], size: [0.34, 0.028, 0.13], tiltDeg: -10 };
@@ -160,6 +231,7 @@ export class MagicKeyboard {
     this.shadow = createBlobShadow({ radius: Math.max(W, D) * 0.62, opacity: 0.16 });
     this.shadow.scale.z = D / W + 0.35;
     this.sparkles = new Sparkles(scene);
+    this.glyphs = new Glyphs(scene);
 
     scene.add(this.group, this.shadow);
     this.mode = 'hidden'; // hidden | in | shown | out
@@ -272,9 +344,12 @@ export class MagicKeyboard {
     k.held = true;
     k.downUntil = this.time + MIN_PRESS;
     this.presses++;
-    if (!this.reducedMotion && this.rng() < 0.22) {
+    if (!this.reducedMotion && this.shown) {
       const p = this.body.localToWorld(k.pos.clone());
-      this.sparkles.spawn(p, new THREE.Vector3((this.rng() - 0.5) * 0.08, 0.12 + this.rng() * 0.06, 0.03), { size: 0.012, dur: 0.6, rng: this.rng });
+      p.y += 0.012;
+      const ch = glyphFor(code);
+      if (ch) this.glyphs.spawn(ch, p, this.rng);
+      else this.sparkles.spawn(p, new THREE.Vector3((this.rng() - 0.5) * 0.08, 0.12 + this.rng() * 0.06, 0.03), { size: 0.014, dur: 0.6, rng: this.rng });
     }
     return k.pos.x >= 0 ? 'L' : 'R';
   }
@@ -311,6 +386,7 @@ export class MagicKeyboard {
   update(dt) {
     this.time += dt;
     this.sparkles.update(dt);
+    this.glyphs.update(dt);
     if (this.mode === 'hidden') return;
     this.t += dt;
     let s = 1;
