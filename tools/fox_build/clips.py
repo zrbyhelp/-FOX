@@ -135,6 +135,9 @@ class Lib:
         fwd = float(np.clip((-paw_centre[1] - 0.10) / 0.12, 0.0, 1.0))
         if fwd > 1e-3:
             p.add(f"shoulder_{side}", z=-sx * 45.0 * fwd)
+        # in front of the chest the arms hug it, sinking a little into the soft fur (the root of a
+        # side-mounted arm has to cross the chest's curve to bring the paws together)
+        kw.setdefault("margin", round(0.004 - 0.012 * fwd, 4))
         # short stubby arms: pull targets beyond a slightly bent arm's reach in along the
         # shoulder -> target line (keeps the pose's direction instead of trading it for aim)
         Qw, Hw = self.rig.fk(p)
@@ -643,6 +646,7 @@ def make_clips(rig: Rig):
     L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016)  # room to nod
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
+    doze.set("tail_1", x=0, z=13)                    # the leaning, breathing body needs a bit more room
     def doze_ov(t, p):
         ph = 2 * math.pi * t / 4.0
         breathe(t, p, rate=0.25, amt=1.3)
@@ -655,13 +659,11 @@ def make_clips(rig: Rig):
         squat.set(f"thigh_{s}", x=-40); squat.set(f"shin_{s}", x=45); squat.set(f"foot_{s}", x=-5)
     clips.append(Clip("SitDown", 1.1, [(0, stand), (0.45, squat), (0.85, think), (1.1, think)],
                       lambda t, p: breathe(t, p, 0.5, 0.3), meta=dict(priority=3, interruptible=False)))
-    clips.append(Clip("StandUp", 1.0, [(0, think), (0.35, squat), (0.8, stand), (1.0, stand)],
+    clips.append(Clip("StandUp", 1.0, [(0, think), (0.45, squat), (0.88, stand), (1.0, stand)],
                       lambda t, p: breathe(t, p, 0.5, 0.3), meta=dict(priority=3, interruptible=False)))
 
     # Jump (airborne: not grounded; hand-set root heights)
-    j_sq = squat.copy()
-    for s, sx in (("L", 1), ("R", -1)):
-        L.arm(j_sq, s, (sx * 0.215, -0.060, 0.190), aim=(sx * 0.3, 0.1, -1.0))
+    j_sq = squat.copy()     # arms stay hanging at the sides through the crouch
     j_up = stand.copy()
     for s, sx in (("L", 1), ("R", -1)):
         L.arm(j_up, s, (sx * 0.292, -0.110, 0.455), aim=(sx * 0.5, -0.2, 1.0))
@@ -670,8 +672,9 @@ def make_clips(rig: Rig):
     j_up.set("ear_L", x=-18, mirror=False); j_up.set("ear_R", x=-18)
     tail_curve(j_up, x=-10, start=2, falloff=0.9)
     j_land = squat.copy(); j_land.expression(eyes="happy")
-    for s, sx in (("L", 1), ("R", -1)):
-        L.arm(j_land, s, (sx * 0.272, -0.100, 0.410), aim=(sx * 0.8, -0.2, 0.6))   # arms still up-ish on landing
+    for b in ("shoulder", "upperArm", "forearm", "paw"):     # arms still up on landing
+        for s in ("L", "R"):
+            j_land.rot[f"{b}_{s}"] = j_up.rot[f"{b}_{s}"].copy()
     T_SQ, T_TAKE, T_LAND, T_SET = 0.32, 0.36, 0.90, 1.12
     def jump_root(t):
         # squat -> take-off -> airborne arc (peak ~0.14) -> landing squash -> settle
@@ -717,7 +720,7 @@ def make_clips(rig: Rig):
         L.arm(d_out, s, (sx * 0.300, -0.040, 0.340), aim=(sx * 1.0, -0.10, 0.25))
     d_cheer = dz.copy()
     for s, sx in (("L", 1), ("R", -1)):
-        L.arm(d_cheer, s, (sx * 0.300, -0.100, 0.460), aim=(sx * 0.50, -0.20, 1.0))
+        L.arm(d_cheer, s, (sx * 0.310, -0.100, 0.460), aim=(sx * 0.50, -0.20, 1.0), head_margin=0.02)
     d_bow = stand.copy().expression(eyes="happy")
     d_bow.add("spine", x=8).add("chest", x=6).add("neck", x=4).add("head", x=8)
     BEAT = 0.6
@@ -737,18 +740,18 @@ def make_clips(rig: Rig):
             p.add("root", z=360.0 * smoother(u))
             hop += 0.05 * math.sin(math.pi * u)
         # cheer (3.9 .. 5.3 s): paws shake, two bounces
-        c = smoother((t - 3.85) / 0.2) * (1 - smoother((t - 5.2) / 0.25))
-        shake = math.sin(2 * math.pi * 4.0 * t)
+        c = smoother((t - 4.0) / 0.25) * (1 - smoother((t - 5.2) / 0.25))
+        shake = math.sin(2 * math.pi * 3.0 * t)
         for s, sx in (("L", 1), ("R", -1)):
-            p.add(f"forearm_{s}", y=-sx * 12 * c * shake)
-        hop += 0.02 * c * abs(math.sin(math.pi * (t - 3.9) / 0.6))
+            p.add(f"forearm_{s}", y=-sx * 9 * c * shake)
+        hop += 0.02 * c * abs(math.sin(math.pi * (t - 4.0) / 0.6))
         p.hop = hop
         e = max(g, c)
         tail_wag(t, p, rate=1 / BEAT, amp=24 * e)
         p.add("ear_L", x=-10 * e * abs(sway)); p.add("ear_R", x=-10 * e * abs(sway))
         breathe(t, p, rate=0.5, amt=0.4)
     clips.append(Clip("Dance", 6.0, [(0, stand), (0.35, d_ready), (0.7, g_l), (1.3, g_r), (1.9, g_l), (2.5, g_r),
-                                     (2.85, d_out), (3.75, d_out), (4.05, d_cheer), (5.1, d_cheer), (5.5, d_bow),
+                                     (2.85, d_out), (3.75, d_out), (4.2, d_cheer), (5.1, d_cheer), (5.5, d_bow),
                                      (6.0, stand)],
                       dance_ov, meta=dict(priority=2, lookAt=0.2, refTime=1.3)))
 
