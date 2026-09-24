@@ -7,6 +7,7 @@ const ICONS = {
   heart: '<path d="M12 20.2S4.2 15.6 4.2 9.6A4.1 4.1 0 0 1 12 7.3a4.1 4.1 0 0 1 7.8 2.3c0 6-7.8 10.6-7.8 10.6z"/>',
   shrug: '<circle cx="12" cy="12" r="9"/><path d="M9.6 9.4a2.5 2.5 0 1 1 3.6 2.3c-.7.3-1.2 1-1.2 1.8v.3"/><path d="M12 17.2h.01"/>',
   jump: '<path d="M12 15V4.5"/><path d="M8 8.3l4-3.8 4 3.8"/><path d="M5 19.5c2.4-1.6 4.7-1.6 7 0s4.6 1.6 7 0"/>',
+  dance: '<path d="M9.5 17V6.8l9-2.3v10.3"/><path d="M9.5 10.2l9-2.3"/><ellipse cx="7" cy="17.3" rx="2.6" ry="2.1" transform="rotate(-18 7 17.3)"/><ellipse cx="16" cy="15.1" rx="2.6" ry="2.1" transform="rotate(-18 16 15.1)"/><path d="M2.8 7.6c.9-1.5 2-2.3 3.4-2.6"/><path d="M21.2 18.4c-.5 1.1-1.2 1.8-2.2 2.2"/>',
   point: '<path d="M3.5 12h10"/><path d="M10 8l4 4-4 4"/><path d="M18.8 8.2c.3 2.5.8 3.2 2.7 3.8-1.9.6-2.4 1.3-2.7 3.8-.3-2.5-.8-3.2-2.7-3.8 1.9-.6 2.4-1.3 2.7-3.8z"/>',
   star: '<path d="M12 3c.6 5 1.9 6.3 7 7-5.1.7-6.4 2-7 7-.6-5-1.9-6.3-7-7 5.1-.7 6.4-2 7-7z"/><path d="M12 20.5v.5"/>',
   sit: '<path d="M7 3.5v10.5"/><path d="M7 11.5h10v2.5H7"/><path d="M8.5 14v6.5"/><path d="M15.5 14v6.5"/>',
@@ -29,6 +30,7 @@ const GROUPS = [
       { id: 'Heart', label: '比心', icon: 'heart', tip: '用爪爪比个心', needs: ['Heart'] },
       { id: 'Shrug', label: '摊手', icon: 'shrug', tip: '摊摊手:唔…这个嘛', needs: ['Shrug'] },
       { id: 'Jump', label: '跳跃', icon: 'jump', tip: '原地蹦一下(也可以双击小狐狸)', needs: ['Jump'] },
+      { id: 'Dance', label: '跳舞', icon: 'dance', tip: '跳一段舞给你看', needs: ['Dance'] },
     ],
   },
   {
@@ -99,7 +101,7 @@ export function createLoader() {
 /**
  * @param {object} o
  * @param {(name:string)=>void} o.trigger
- * @param {(name:string)=>boolean} o.has
+ * @param {(name:string)=>boolean} o.has  clip available (re-read on setMode: the 2D puppet has its own)
  * @param {(on:boolean)=>void} o.onFollow
  * @param {()=>void} o.onResetView
  * @param {(mode:'3d'|'2d')=>void} [o.onMode]  3D model / Live2D-style 2D puppet switch
@@ -111,9 +113,6 @@ export function createUI({ trigger, has, onFollow, onResetView, onMode = null, m
   const groups = GROUPS.map((g) => {
     const items = g.items.map((a) => {
       const b = makeButton(a);
-      b.dataset.ok = String(!a.needs || a.needs.every(has));
-      b.disabled = b.dataset.ok !== 'true';
-      if (b.disabled) b.title = `${a.tip}(当前模型没有这个动作)`;
       if (a.toggle) b.setAttribute('aria-pressed', 'false');
       b.addEventListener('click', () => trigger(a.id));
       buttons.set(a.id, { b, a });
@@ -185,6 +184,7 @@ export function createUI({ trigger, has, onFollow, onResetView, onMode = null, m
       b.tabIndex = on ? 0 : -1;
     }
     hint.textContent = HINTS[m] || HINTS['3d'];
+    refreshAvailable();
     reset.title = m === '2d' ? '重新摆正小狐狸' : '回到默认视角';
     dock.dataset.mode = m;
   }
@@ -193,6 +193,16 @@ export function createUI({ trigger, has, onFollow, onResetView, onMode = null, m
 
   // ---- live state ----
   let last = '';
+  /** Enable the actions the fox shown now can play (the 3D model may lack some clips). */
+  function refreshAvailable() {
+    for (const { b, a } of buttons.values()) {
+      const ok = !a.needs || a.needs.every(has);
+      b.dataset.ok = String(ok);
+      b.disabled = !ok;
+      b.title = ok ? a.tip : `${a.tip}(当前模型没有这个动作)`;
+    }
+    last = ''; // update() re-applies the away state
+  }
   const presence = buttons.get('Presence').b;
   const typeBtn = buttons.get('TypeDemo').b;
   function update(s) {

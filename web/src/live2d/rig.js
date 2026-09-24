@@ -83,7 +83,7 @@ const HEAD_TURN = 0.05; // model units the face centre shifts at |AngleX| = 30
 const HEAD_NOD = 0.036; // ... at |AngleY| = 30
 const ARM_SPLIT = 0.82; // front part of an arm = within this x upper-arm length of the elbow, or beyond it
 const HEAD_GLOBAL = 0.16; // share of the shift that moves the whole head (silhouette included)
-const SPIN_MIN_WIDTH = 0.25; // ParamSpin: relative width when seen edge-on
+const SPIN_MIN_WIDTH = 0.35; // ParamSpin: relative width when seen edge-on
 const FACE_DEPTH = {
   Nose: 1.4, MouthSmile: 1.22, MouthOpen: 1.22,
   Eye_L: 1.04, Eye_R: 1.04, EyeHappy_L: 1.04, EyeHappy_R: 1.04, EyeSleep_L: 1.04, EyeSleep_R: 1.04,

@@ -5,7 +5,8 @@
 //   node scripts/interact.mjs --url http://localhost:5173/
 //
 // Clips missing from the loaded model are reported as SKIP (with the fallback that played),
-// never as FAIL. Exits non-zero if any check FAILs.
+// never as FAIL. Exits non-zero if any check FAILs. With a Dance clip, groove / spin / cheer
+// screenshots go to ../build/snaps/dance (--snaps <dir>).
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -19,6 +20,7 @@ const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
 const query = opt('--query', '');
 let base = opt('--url', null);
+const snapDir = path.resolve(webDir, opt('--snaps', '../build/snaps/dance')); // 3D Dance screenshots
 
 let server = null;
 if (!base) {
@@ -361,7 +363,7 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
 {
   await waitIdle();
   const buttons = await page.$$eval('.toolbar button[data-trigger]', (bs) => bs.map((b) => ({ t: b.dataset.trigger, d: b.disabled, label: b.textContent })));
-  const needs = { Wave: 'Wave', Happy: 'Happy', Heart: 'Heart', Shrug: 'Shrug', Present: 'Present', Reach: 'Reach', Jump: 'Jump', Sit: 'Sit_Think', Doze: 'Sit_Doze' };
+  const needs = { Wave: 'Wave', Happy: 'Happy', Heart: 'Heart', Shrug: 'Shrug', Present: 'Present', Reach: 'Reach', Jump: 'Jump', Dance: 'Dance', Sit: 'Sit_Think', Doze: 'Sit_Doze' };
   const wrong = buttons.filter((b) => needs[b.t] && b.d === has(needs[b.t]));
   record('toolbar buttons enabled iff clip exists', buttons.length >= 13 && !wrong.length ? 'PASS' : 'FAIL',
     `${buttons.length} buttons, disabled: ${buttons.filter((b) => b.d).map((b) => b.label).join(' ') || 'none'}`);
@@ -380,6 +382,84 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
   record('比心 -> bubble', b.bubble === '送你一颗小心心~' ? 'PASS' : 'FAIL', `bubble=${b.bubble}`);
   const active = await page.$$eval('.toolbar button.is-active', (bs) => bs.map((x) => x.dataset.trigger));
   record('playing action is highlighted', active.includes('Heart') ? 'PASS' : 'FAIL', `active: ${active.join(' ') || 'none'}`);
+}
+
+// Toolbar 跳舞: the Dance one-shot (highlighted, bubble, music notes on the beats, back to Idle),
+// played after standing up when sitting. SKIP (button disabled) when the model has no Dance clip.
+{
+  await waitIdle();
+  const btn = await page.$eval('.toolbar button[data-trigger="Dance"]', (b) => ({ label: b.textContent.trim(), disabled: b.disabled, title: b.title })).catch(() => null);
+  record('toolbar has 跳舞 (disabled iff no Dance clip)', btn && btn.label === '跳舞' && btn.disabled === !has('Dance') ? 'PASS' : 'FAIL', btn ? `disabled=${btn.disabled} title=${btn.title}` : 'no button');
+  if (!has('Dance')) {
+    const note = `${query || 'model=fox.glb'} has no Dance clip (button disabled); run with --query model=dev/m1.glb once the dev build has it`;
+    for (const n of ['toolbar 跳舞 -> Dance', '跳舞 highlighted + bubble', 'Dance: music notes on the beats, back to Idle', 'Dance while sitting: StandUp, then Dance']) record(n, 'SKIP', note);
+  } else {
+    const shown0 = await page.evaluate(() => window.__fox._app.noteFx.shown);
+    await page.click('.toolbar button[data-trigger="Dance"]');
+    await expectClip('toolbar 跳舞 -> Dance', 'Dance');
+    const b = await waitFor((s) => s.bubble === '一起跳舞吧~♪', 2500, 50);
+    const active = await page.$$eval('.toolbar button.is-active', (bs) => bs.map((x) => x.dataset.trigger));
+    record('跳舞 highlighted + bubble', active.includes('Dance') && b.bubble === '一起跳舞吧~♪' ? 'PASS' : 'FAIL', `active: ${active.join(' ') || 'none'}, bubble=${b.bubble}`);
+    // the rest of the clip in fixed 60 Hz steps (software GL renders a few fps): a note pops on
+    // each of the 7 beats, the clip plays as a one-shot and settles back to Idle
+    const r = await page.evaluate((shown0) => {
+      const app = window.__fox._app;
+      const { animator, noteFx } = app;
+      app.stopLoop();
+      const t0 = animator.clip === 'Dance' ? animator.cur.action.time : -1;
+      let maxLive = 0;
+      const states = new Set();
+      for (let k = 0; k < 60 * 7 && !(animator.state === 'Idle' && animator.clip === 'Idle' && k > 60); k++) {
+        app.step(1 / 60);
+        states.add(`${animator.state}/${animator.intent}`);
+        maxLive = Math.max(maxLive, noteFx.pool.filter((s) => s.visible).length);
+      }
+      const end = { state: animator.state, clip: animator.clip };
+      app.startLoop();
+      return { notes: noteFx.shown - shown0, t0, maxLive, states: [...states], end, reduced: noteFx.reducedMotion };
+    }, shown0);
+    record('Dance: music notes on the beats, back to Idle', r.notes === (r.reduced ? 0 : 7) && r.end.state === 'Idle' && r.end.clip === 'Idle' ? 'PASS' : 'FAIL',
+      `${r.notes} notes (fixed steps from ${r.t0.toFixed(2)} s, up to ${r.maxLive} at once), ${r.states.join(' -> ')} -> ${r.end.state}/${r.end.clip}`);
+    await page.evaluate(() => window.__fox.trigger('Sit'));
+    const seated = await waitFor((s) => s.state === 'Sitting' && s.phase !== 'down', 8000);
+    const w = await page.evaluate(() => {
+      const app = window.__fox._app;
+      app.stopLoop();
+      const got = app.interaction.trigger('Dance');
+      const seen = [app.animator.clip];
+      for (let k = 0; k < 60 * 4 && app.animator.clip !== 'Dance'; k++) {
+        app.step(1 / 60);
+        if (seen[seen.length - 1] !== app.animator.clip) seen.push(app.animator.clip);
+      }
+      const r = { got, seen, state: app.animator.state, intent: app.animator.intent };
+      app.startLoop();
+      return r;
+    });
+    const stood = !has('StandUp') || w.seen.includes('StandUp');
+    record('Dance while sitting: StandUp, then Dance', seated.state === 'Sitting' && w.got === 'Dance' && stood && w.state === 'OneShot' && w.intent === 'Dance' ? 'PASS' : 'FAIL',
+      `trigger -> ${w.got}; ${w.seen.join(' -> ')} (${w.state}/${w.intent})`);
+    if (snapDir) {
+      fs.mkdirSync(snapDir, { recursive: true });
+      await page.evaluate(() => { const app = window.__fox._app; app.stopLoop(); app.bubble.clear(); }); // e.g. 我醒啦! from the StandUp
+      for (const [t, name] of [[1.3, 'groove'], [3.3, 'spin'], [4.45, 'cheer']]) {
+        await page.evaluate(async (tt) => {
+          const app = window.__fox._app;
+          app.animator.toIdle(0);
+          app.noteFx.clear();
+          app.animator.request('Dance');
+          for (let k = 0; k < Math.round(tt * 60); k++) app.step(1 / 60);
+          // two real frames that do not advance time: toolbar + bubble catch up, then render
+          app.setMaxDelta(0);
+          app.startLoop();
+          for (let k = 0; k < 2; k++) await new Promise((res) => requestAnimationFrame(res));
+          app.stopLoop();
+          app.setMaxDelta(0.6);
+        }, t);
+        await page.screenshot({ path: path.join(snapDir, `3d_dance_${name}.png`) });
+      }
+      await page.evaluate(() => { const app = window.__fox._app; app.bubble.clear(); app.animator.toIdle(0); app.startLoop(); });
+    }
+  }
 }
 
 // Typing: simulated keystrokes -> keyboard + Typing; 1.8 s without keys -> gone, Idle.

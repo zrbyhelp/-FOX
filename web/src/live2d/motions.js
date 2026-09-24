@@ -27,7 +27,7 @@ export const ARM = {
   danceUp: [[56, 84, 16], 2], // elbow out, paw up beside the cheek
   danceDown: [[10, 6, 0], 0],
   armsOut: [[56, 14, 6], 0],
-  cheer: [[48, 90, 30], 2],
+  cheer: [[64, 34, 22], 2], // both paws out wide and up (the 3D cheer)
 };
 
 /**
@@ -335,10 +335,10 @@ def('Dance', {
       v.ParamAngleX += 26 * s;
       v.ParamBodyAngleX += 8 * s;
       v.ParamEyeBallX += 0.5 * s;
-      y += 0.07 * Math.sin(Math.PI * u);
+      y += 0.05 * Math.sin(Math.PI * u);
       tail += 18 * Math.sin(Math.PI * u);
     }
-    squash += 0.12 * env(t, 2.85, 3.0, 3.55, 3.7) - 0.45 * Math.exp(-((t - 2.8) ** 2) / 0.003) - 0.4 * Math.exp(-((t - 3.8) ** 2) / 0.003);
+    squash += 0.06 * env(t, 2.85, 3.0, 3.55, 3.7) - 0.45 * Math.exp(-((t - 2.8) ** 2) / 0.003) - 0.4 * Math.exp(-((t - 3.8) ** 2) / 0.003);
     // cheer (3.85 .. 5.3 s): both paws up shaking (~4 Hz), two bounces, the head rocking along
     const c = env(t, 3.85, 4.05, 5.2, 5.45);
     const shake = TAU * 4 * t;

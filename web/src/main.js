@@ -7,7 +7,7 @@ import * as THREE from 'three';
 import spec from '../../spec.json';
 import { createStage, createBlobShadow } from './scene.js';
 import { createMaterialLibrary } from './materials.js';
-import { loadFox, makeLoader, DozeFx } from './fox.js';
+import { loadFox, makeLoader, DozeFx, NoteFx } from './fox.js';
 import { loadLogo, Logo } from './logo.js';
 import { Animator, POP_IN, POP_OUT } from './animator.js';
 import { Procedural } from './procedural.js';
@@ -46,6 +46,7 @@ const LINES = {
   Present: { text: '看!这是我们的 Logo' },
   Reach: { text: '我够得到吗?' },
   Jump: { text: '跳~!' },
+  Dance: { text: '一起跳舞吧~♪' },
   LookBack: { text: '我的尾巴好看吗?' },
   Pet: { text: '好舒服呀~', cooldown: 12 },
   Sit_Think: { text: '让我想想…', cooldown: 20 },
@@ -88,6 +89,7 @@ async function main() {
   // typing fallback (models without a Type clip): the paws reach for the keyboard's near keys
   procedural.setTypingTargets({ L: fox.root.worldToLocal(keyboard.tapPoint('L')), R: fox.root.worldToLocal(keyboard.tapPoint('R')) });
   const heartFx = new HeartFx(scene, fox, { reducedMotion, rng });
+  const noteFx = new NoteFx(scene, fox, { reducedMotion });
   if (debug) {
     animator.auto = false;
     procedural.randomness = false;
@@ -104,7 +106,7 @@ async function main() {
   if (!noUI) {
     ui = createUI({
       trigger: (name) => (mode === '2d' ? trigger2D(name) : interaction.trigger(name)),
-      has: (name) => animator.has(name),
+      has: (name) => (mode === '2d' && twoD ? twoD.app.has(name) : animator.has(name)), // re-read on a mode switch
       onFollow: (on) => {
         follow = on;
         interaction.followPointer = on;
@@ -147,6 +149,7 @@ async function main() {
     } else if (type === 'state' && d.to === 'Away') {
       bubble.clear();
       heartFx.clear();
+      noteFx.clear();
     } else if (type === 'presence') {
       if (d.mode === 'popIn') logo.popIn(reducedMotion ? 0 : LOGO_IN_DELAY);
       else if (d.mode === 'popOut') logo.popOut(reducedMotion ? 0 : LOGO_OUT_DELAY);
@@ -201,6 +204,7 @@ async function main() {
     procedural.talk = bubble.talking;
     procedural.update(dt, animator.layers);
     heartFx.update(dt, camera, animator.cur?.action);
+    noteFx.update(dt, animator.clip === 'Dance' && !animator.posing ? animator.cur.action.time : null);
     dozeFx.setActive(animator.state === 'Sitting' && animator.clip === 'Sit_Doze');
     dozeFx.update(dt);
     updateShadows();
@@ -241,7 +245,7 @@ async function main() {
 
   const app = {
     stage, fox, logo, animator, procedural, interaction, rng, dozeFx, updateShadows, materials, step,
-    bubble, keyboard, typing, heartFx, hooks, foxShadow,
+    bubble, keyboard, typing, heartFx, noteFx, hooks, foxShadow,
     setMode,
     get mode() { return mode; },
     get live2d() { return twoD?.app ?? null; },
@@ -271,7 +275,7 @@ async function main() {
   async function ensure2D() {
     if (twoD) return twoD;
     const app2d = await createLive2DApp({
-      container: stage2d, spec, insetBottom: insetBottom(), keyboard: true, debug,
+      container: stage2d, spec, insetBottom: insetBottom(), keyboard: true, debug, reducedMotion,
       seed: debug ? 1 : undefined,
     });
     const t = { app: app2d, intent: null, typing: false, time: 0, raf: 0, last: 0 };
@@ -334,6 +338,7 @@ async function main() {
         typing.enabled = false;
         keyboard.group.visible = keyboard.shadow.visible = false;
         heartFx.clear();
+        noteFx.clear();
         canvas.style.visibility = 'hidden';
         stage2d.hidden = false;
         mode = '2d';
@@ -378,6 +383,7 @@ async function main() {
   keyboard.group.visible = keyboard.shadow.visible = false;
   heartFx.group.visible = false;
   dozeFx.clear();
+  noteFx.clear();
 
   animator.toIdle(0);
   animator.enter({ intro: true }); // pop in out of thin air + Wave, the logo a beat later

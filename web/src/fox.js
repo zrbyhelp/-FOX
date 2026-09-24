@@ -214,7 +214,7 @@ export class DozeFx {
 
 // [clip s, side]: +1 = the fox's left
 const NOTE_BEATS = [[0.7, 1], [1.3, -1], [1.9, 1], [2.5, -1], [3.3, 1], [4.2, -1], [4.8, 1]];
-const NOTE_OFFSET = new THREE.Vector3(0.27, 0.2, 0.08); // from the head pivot, fox space (x per side)
+const NOTE_OFFSET = new THREE.Vector3(0.43, 0.3, 0.06); // from the head pivot (neck), fox space (x per side)
 const NOTE_LIFE = 1.5; // s
 
 /** ♪ (eighth note) or ♫ (beamed pair), white outline, orange gradient. */
@@ -266,7 +266,7 @@ export class NoteFx {
     for (let i = 0; i < 6; i++) {
       const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex[i % 2], transparent: true, depthWrite: false, opacity: 0 }));
       s.name = 'DanceNote';
-      s.userData = { life: -1, origin: new THREE.Vector3(), out: new THREE.Vector3(), phase: i };
+      s.userData = { life: -1, origin: new THREE.Vector3(), out: new THREE.Vector3(), side: 1, phase: i };
       scene.add(s);
       this.pool.push(s);
     }
@@ -294,6 +294,7 @@ export class NoteFx {
     this.fox.root.getWorldQuaternion(this._q);
     u.out.set(side, 0, 0).applyQuaternion(this._q);
     this.fox.bones.head.getWorldPosition(u.origin).add(this._v.set(NOTE_OFFSET.x * side, NOTE_OFFSET.y, NOTE_OFFSET.z).applyQuaternion(this._q));
+    u.side = side;
     u.life = 0;
     s.position.copy(u.origin);
     s.visible = true;
@@ -314,11 +315,11 @@ export class NoteFx {
       const L = u.life;
       const k = Math.min(1, (L * NOTE_LIFE) / 0.28);
       const pop = 1 + 2.2 * (k - 1) ** 3 + 1.2 * (k - 1) ** 2; // easeOutBack
-      const sc = 0.075 * pop;
+      const sc = 0.085 * pop;
       s.position.copy(u.origin).addScaledVector(u.out, 0.05 * L + 0.012 * Math.sin(L * 9 + u.phase));
       s.position.y += 0.16 * (1 - (1 - L) ** 3);
       s.scale.set(sc, sc, sc);
-      s.material.rotation = -0.12 * Math.sign(u.out.x || 1) + 0.2 * Math.sin(L * 7.5 + u.phase);
+      s.material.rotation = -0.12 * u.side + 0.2 * Math.sin(L * 7.5 + u.phase);
       s.material.opacity = 1 - THREE.MathUtils.smoothstep(L, 0.55, 1);
     }
   }
