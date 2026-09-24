@@ -130,11 +130,11 @@ class Lib:
         _CACHE = _CACHE or _SolveCache()
         paw_centre = np.asarray(paw_centre, float)
         # the shoulders sit at the body's sides under the scarf; reaching in front of the chest
-        # they roll forward (protraction, up to 30 deg) so the short arms still meet there
+        # they roll forward (protraction, up to 45 deg) so the short arms still meet there
         sx = 1.0 if side == "L" else -1.0
         fwd = float(np.clip((-paw_centre[1] - 0.10) / 0.12, 0.0, 1.0))
         if fwd > 1e-3:
-            p.add(f"shoulder_{side}", z=-sx * 30.0 * fwd)
+            p.add(f"shoulder_{side}", z=-sx * 45.0 * fwd)
         # short stubby arms: pull targets beyond a slightly bent arm's reach in along the
         # shoulder -> target line (keeps the pose's direction instead of trading it for aim)
         Qw, Hw = self.rig.fk(p)
@@ -169,7 +169,7 @@ class Lib:
         p = Pose()
         p.set("ear_L", y=-4, mirror=True)
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.228, -0.020, 0.185), aim=(sx * 0.15, 0.05, -1.0))
+            self.arm(p, s, (sx * 0.250, -0.020, 0.200), aim=(sx * 0.15, 0.05, -1.0))
         return p
 
     def clasp(self, p=None, **kw):

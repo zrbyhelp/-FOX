@@ -30,7 +30,7 @@ EAR_BASE, EAR_R, EAR_LEN = _ear_frame()
 EAR_Y0 = -0.035        # base sinks into the head
 EAR_FLAT = 0.50        # front-back squash: a broad leaf-like shell, not a round horn
 EAR_TIP = 0.020        # radius of the softly rounded tip
-EAR_OPEN_T = 0.55      # the ear's front is closed below this (~ the lower third above the head)
+EAR_OPEN_T = 0.49      # the ear's front is closed below this (~ the lower third above the head)
 
 
 def _ear_radius(y):
