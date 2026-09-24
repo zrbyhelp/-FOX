@@ -93,7 +93,6 @@ export class Logo {
     // Face the ref34 camera, turned a little further so the cubes show a side face.
     const cam = spec.cameras.ref34.position;
     this.anchor.rotation.y = Math.atan2(cam[0] - g.position[0], cam[2] - g.position[2]) - 0.2;
-    this.baseY = g.position[1];
 
     this.pieces = {};
     for (const name of spec.logo.pieces) {

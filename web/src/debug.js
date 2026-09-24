@@ -41,7 +41,7 @@ export function installDebug(app) {
       phase: animator.phase,
       logo: logo.state,
       logoSource: logo.source,
-      earEnergy: procedural.earEnergy,
+      earFlicks: procedural.flicks,
       lookWeight: procedural.look.w.x,
       layers: { ...animator.layers },
     }),
@@ -58,7 +58,7 @@ export function installDebug(app) {
       procedural.enabled = false;
       logo.pose(logoState);
       app.dozeFx.clear();
-      stage.setView(cam);
+      stage.setView(cam, { fit: false }); // exact spec camera for reference comparisons
       fox.root.updateMatrixWorld(true);
       app.updateShadows();
       stage.render();

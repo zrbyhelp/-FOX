@@ -230,7 +230,7 @@ function makeKnitTexture(size = 256, cols = 8, rows = 10) {
 
 // ---------------------------------------------------------------------------------------------
 
-export function baseName(name = '') {
+function baseName(name = '') {
   return name.replace(/\.\d+$/, '');
 }
 
@@ -264,7 +264,7 @@ export function createMaterialLibrary({ anisotropy = 4 } = {}) {
       if (hasRest || hasUV) {
         addSurfaceShader(mat, {
           grain: hasUV ? null : { scale: SURFACE.scarfGrainScale, strength: 0.12, mottle: 0.04 },
-          ao: hasAO && hasRest,
+          ao: hasAO,
           knitShade: hasUV,
         });
       }

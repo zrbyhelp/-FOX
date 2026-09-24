@@ -128,6 +128,8 @@ export async function loadFox({ url, clipsUrl, spec, materials }) {
 // ---------------------------------------------------------------------------------------------
 // Floating "Z" sprites while dozing.
 
+const SPAWN_OFFSET = new THREE.Vector3(0.12, 0.42, 0.05); // from the head pivot, world axes
+
 export class DozeFx {
   constructor(scene, headBone) {
     this.head = headBone;
@@ -171,7 +173,7 @@ export class DozeFx {
         this.timer = 1.1;
         const s = this.pool.find((p) => p.userData.life < 0);
         if (s) {
-          this.head.localToWorld(this._v.set(0.12, 0.42, 0.05));
+          this.head.getWorldPosition(this._v).add(SPAWN_OFFSET);
           s.position.copy(this._v);
           s.userData.origin = this._v.clone();
           s.userData.life = 0;

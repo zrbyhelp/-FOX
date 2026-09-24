@@ -38,7 +38,8 @@ export class Interaction {
     this.hoverLogo = false;
     this.logoFocusUntil = 0; // look at the logo until this time
     this.lastPresent = -Infinity;
-    this.touchHoverUntil = 0;
+    this.touchHoverUntil = 0; // touch: a second tap before this time activates the logo
+    this.glowUntil = 0; // logo hover glow without a mouse hover
     this.time = 0;
     this.lookVec = new THREE.Vector3();
     this.hoverDirty = false;
@@ -137,7 +138,7 @@ export class Interaction {
     }
     // Touch has no hover: the first tap presents the logo, a second tap activates it.
     if (pointerType !== 'mouse' && this.time > this.touchHoverUntil) {
-      this.touchHoverUntil = this.time + 3;
+      this.touchHoverUntil = this.glowUntil = this.time + 3;
       this.presentLogo();
       return;
     }
@@ -169,15 +170,14 @@ export class Interaction {
         return a.request('Reach');
       case 'Present':
         this.logoFocusUntil = this.time + 3.5;
-        this.logo.setHover(true);
-        setTimeout(() => this.logo.setHover(this.hoverLogo), 1500);
+        this.glowUntil = this.time + 1.5;
         return a.request('Present');
       case 'Reach': return this.trigger('logo');
       case 'Sit': return a.sit() ? 'SitDown' : null;
       case 'Doze': return a.sit({ doze: true }) ? 'Sit_Doze' : null;
       case 'Pet': return a.startPet() ? 'Pet' : null;
       case 'PetEnd': return a.endPet();
-      case 'Wake': a.poke(true); return 'StandUp';
+      case 'Wake': a.poke(false); return a.wake('Wave');
       default: return a.request(name);
     }
   }
@@ -197,7 +197,7 @@ export class Interaction {
       this.hoverLogo = onLogo;
       this.canvas.style.cursor = part ? 'pointer' : '';
     }
-    this.logo.setHover(this.hoverLogo || this.time < this.touchHoverUntil);
+    this.logo.setHover(this.hoverLogo || this.time < this.glowUntil);
 
     // Look-at target: the logo while it is the focus, else the pointer ray.
     if (this.hoverLogo || this.logo.isActive || this.time < this.logoFocusUntil || this.animator.lookAtLogo) {
@@ -214,7 +214,7 @@ export class Interaction {
     const r = this.canvas.getBoundingClientRect();
     this.ndc.set(((p.x - r.left) / r.width) * 2 - 1, -((p.y - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const face = this.fox.bones.head.localToWorld(new THREE.Vector3(0, 0.15, 0));
+    const face = this.fox.bones.head.localToWorld(this.procedural.eyeLocal.clone());
     const toCam = this.camera.position.clone().sub(face).normalize();
     const planePoint = face.addScaledVector(toCam, 0.7);
     const plane = new THREE.Plane().setFromNormalAndCoplanarPoint(toCam, planePoint);

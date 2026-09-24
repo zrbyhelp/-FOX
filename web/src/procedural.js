@@ -17,8 +17,11 @@ const _q = new THREE.Quaternion();
 const _q2 = new THREE.Quaternion();
 const _qc = new THREE.Quaternion(); // character (root) world rotation, valid for one update()
 const _qi = new THREE.Quaternion();
-const _up = new THREE.Vector3();
+const _up = new THREE.Vector3(); // character up axis, valid for one update()
 const _axis = new THREE.Vector3();
+const _rp = new THREE.Quaternion();
+const _rpi = new THREE.Quaternion();
+const _dq = new THREE.Quaternion();
 
 /** Exact critically damped step of x towards target (state {x, v}). */
 function critDamp(s, target, omega, dt) {
@@ -45,11 +48,6 @@ class Spring {
   }
   reset() { this.x = this.v = this.target = 0; }
 }
-
-const _rp = new THREE.Quaternion();
-const _rpi = new THREE.Quaternion();
-
-const _dq = new THREE.Quaternion();
 
 /** World angular velocity (axis * rad/s) between two world rotations. */
 function angularVelocity(qPrev, qNow, dt, out) {
@@ -83,6 +81,18 @@ export class Procedural {
       bone: this.b[n], q: this.b[n].quaternion.clone(), s: this.b[n].scale.clone(), p: this.b[n].position.clone(),
     }));
 
+    // Bone-local directions that point character-forward (+Z) and character-left (+X) in the
+    // rest pose, and the eye point, so nothing below depends on how bones are rolled in the rig.
+    this.axes = {};
+    for (const n of ['head', 'chest']) {
+      const bone = this.b[n];
+      if (!bone) continue;
+      const inv = bone.getWorldQuaternion(new THREE.Quaternion()).invert();
+      this.axes[n] = { fwd: new THREE.Vector3(0, 0, 1).applyQuaternion(inv), side: new THREE.Vector3(1, 0, 0).applyQuaternion(inv) };
+    }
+    const head = this.b.head;
+    this.eyeLocal = head ? head.worldToLocal(head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.15, 0.05))) : null;
+
     this.target = null; // Vector3 or null
     this.look = { yaw: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, w: { x: 0, v: 0 } };
 
@@ -92,12 +102,13 @@ export class Procedural {
 
     this.ears = { L: [new Spring(22, 0.22), new Spring(18, 0.3)], R: [new Spring(22, 0.22), new Spring(18, 0.3)] };
     this.earIn = 3 + rng() * 5;
+    this.flicks = 0; // explicit ear flicks (clicks), for tests
 
     this.tail = { yaw: new Spring(7, 0.35), pitch: new Spring(7, 0.4) };
     this.flap = { swing: new Spring(10, 0.25), side: new Spring(9, 0.3) };
     this.acc = 0;
     this.time = 0;
-    this.prev = null; // previous hips/chest state for velocity estimates
+    this.prev = null; // previous hips/head/chest transforms for velocity estimates
 
     document.addEventListener('visibilitychange', () => { if (!document.hidden) this.reset(); });
   }
@@ -128,10 +139,7 @@ export class Procedural {
     if (!e) return;
     e[0].v += 9 + this.rng() * 3;
     e[1].v += 5;
-  }
-
-  get earEnergy() {
-    return Math.abs(this.ears.L[0].x) + Math.abs(this.ears.R[0].x) + Math.abs(this.ears.L[0].v) + Math.abs(this.ears.R[0].v);
+    this.flicks++;
   }
 
   update(dt, layers) {
@@ -157,7 +165,7 @@ export class Procedural {
     const active = !!this.target;
     critDamp(L.w, active ? weight : 0, 6, dt);
     const invChar = _qi.copy(charQ).invert();
-    const eye = head.localToWorld(_v.set(0, 0.15, 0.05));
+    const eye = head.localToWorld(_v.copy(this.eyeLocal));
     if (active) {
       const d = _v2.copy(this.target).sub(eye).applyQuaternion(invChar);
       const yaw = THREE.MathUtils.clamp(Math.atan2(d.x, d.z), -YAW_MAX, YAW_MAX);
@@ -169,8 +177,9 @@ export class Procedural {
     if (w < 1e-3) return;
 
     // Current animated head direction in the character frame.
+    const hf = this.axes.head.fwd;
     head.getWorldQuaternion(_q);
-    const f = _v2.set(0, 0, 1).applyQuaternion(_q).applyQuaternion(invChar);
+    const f = _v2.copy(hf).applyQuaternion(_q).applyQuaternion(invChar);
     const curYaw = Math.atan2(f.x, f.z);
     const curPitch = Math.atan2(f.y, Math.hypot(f.x, f.z));
     const dYaw = THREE.MathUtils.clamp(L.yaw.x - curYaw, -70 * DEG, 70 * DEG) * w;
@@ -179,7 +188,7 @@ export class Procedural {
     for (const [bone, share] of [[neck, 0.35], [head, neck ? 0.65 : 1]]) {
       if (!bone) continue;
       // yaw about the character's up axis, pitch about the head's current horizontal right axis
-      const fwd = _v.set(0, 0, 1).applyQuaternion(head.getWorldQuaternion(_q2));
+      const fwd = _v.copy(hf).applyQuaternion(head.getWorldQuaternion(_q2));
       _axis.crossVectors(fwd, _up);
       if (_axis.lengthSq() < 1e-6) continue;
       _axis.normalize();
@@ -248,8 +257,8 @@ export class Procedural {
     const rise = hipsVel.y;
 
     // Ears lag head roll (flick in/out) and nods (fold back/forward).
-    const headFwd = _v.set(0, 0, 1).applyQuaternion(now.headQ);
-    const headRight = _v2.set(1, 0, 0).applyQuaternion(now.headQ);
+    const headFwd = _v.copy(this.axes.head.fwd).applyQuaternion(now.headQ);
+    const headRight = _v2.copy(this.axes.head.side).applyQuaternion(now.headQ);
     const roll = THREE.MathUtils.clamp(headW.dot(headFwd) * 0.14, -0.6, 0.6);
     const nod = THREE.MathUtils.clamp(headW.dot(headRight) * 0.2, -0.6, 0.6);
     this.ears.L[0].target = roll;
@@ -289,8 +298,8 @@ export class Procedural {
   applyEars() {
     const head = this.b.head;
     head.getWorldQuaternion(_q);
-    const fwd = _v.set(0, 0, 1).applyQuaternion(_q);
-    const right = _v2.set(1, 0, 0).applyQuaternion(_q);
+    const fwd = _v.copy(this.axes.head.fwd).applyQuaternion(_q);
+    const right = _v2.copy(this.axes.head.side).applyQuaternion(_q);
     for (const [side, sign] of [['L', -1], ['R', 1]]) {
       const bone = this.b[`ear_${side}`];
       if (!bone) continue;
@@ -320,8 +329,8 @@ export class Procedural {
     const chest = this.b.chest;
     if (!chest) return;
     chest.getWorldQuaternion(_q);
-    const right = _v.set(1, 0, 0).applyQuaternion(_q);
-    const fwd = _v2.set(0, 0, 1).applyQuaternion(_q);
+    const right = _v.copy(this.axes.chest.side).applyQuaternion(_q);
+    const fwd = _v2.copy(this.axes.chest.fwd).applyQuaternion(_q);
     for (const [n, share] of [['scarfFlap_1', 0.6], ['scarfFlap_2', 0.4]]) {
       const bone = this.b[n];
       if (!bone) continue;

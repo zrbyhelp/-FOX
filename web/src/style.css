@@ -156,6 +156,14 @@ body {
   color: #b2442a;
 }
 
+/* The toolbar scrolls sideways when it does not fit: fade its edges as a hint. */
+@media (max-width: 900px) {
+  .toolbar {
+    -webkit-mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent);
+    mask-image: linear-gradient(to right, transparent 0, #000 10px, #000 calc(100% - 18px), transparent);
+  }
+}
+
 @media (max-width: 480px) {
   .pill {
     padding: 8px 12px;

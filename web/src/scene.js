@@ -106,11 +106,11 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   }
 
   /**
-   * Place the camera at a spec preset. If the content does not fit the viewport above the
-   * toolbar (e.g. portrait phones), pull the camera back along the preset direction and
-   * recentre with a view offset; otherwise the preset is used unchanged.
+   * Place the camera at a spec preset. With `fit`, if the content does not fit the viewport
+   * above the toolbar (e.g. portrait phones), pull the camera back along the preset direction
+   * and recentre with a view offset; otherwise (and always without `fit`) the preset is exact.
    */
-  function setView(name = 'ref34') {
+  function setView(name = 'ref34', { fit: fitContent = true } = {}) {
     const c = spec.cameras[name] || spec.cameras.ref34;
     viewName = spec.cameras[name] ? name : 'ref34';
     const { w, h } = size();
@@ -128,11 +128,11 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
       camera.position.copy(target).addScaledVector(offset, k);
       camera.lookAt(target);
       box = projectedContent();
-      const fit = Math.max((box.max.x - box.min.x) / (2 * MARGIN), (box.max.y - box.min.y) / (2 * usable * MARGIN));
-      if (i === 0 && fit <= 1) break;
-      k *= fit; // projected size scales ~1/distance
+      const over = Math.max((box.max.x - box.min.x) / (2 * MARGIN), (box.max.y - box.min.y) / (2 * usable * MARGIN));
+      if (!fitContent || (i === 0 && over <= 1)) break;
+      k *= over; // projected size scales ~1/distance
     }
-    if (k > 1 || insetBottom > 0) {
+    if (fitContent && (k > 1 || insetBottom > 0)) {
       const cx = (box.min.x + box.max.x) / 2;
       const cy = (box.min.y + box.max.y) / 2;
       shift = { x: k > 1 ? (cx * w) / 2 : 0, y: ((1 - cy) / 2) * h - (usable * h) / 2 };

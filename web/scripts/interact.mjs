@@ -128,13 +128,14 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
   await expectClip('double-click -> Jump', 'Jump');
 }
 
-// Click ear -> ear flick (procedural spring).
+// Click ear -> ear flick (procedural spring impulse, after the double-click window).
 {
   await waitIdle();
+  const before = (await info()).earFlicks;
   const p = await pickCheck('ear_L');
   await page.mouse.click(p.x, p.y);
-  const i = await waitFor((s) => s.earEnergy > 0.3, 1500, 50);
-  record('click ear -> ear flick', i.earEnergy > 0.3 ? 'PASS' : 'FAIL', `earEnergy=${i.earEnergy.toFixed(2)}`);
+  const i = await waitFor((s) => s.earFlicks > before, 2000, 50);
+  record('click ear -> ear flick', i.earFlicks > before ? 'PASS' : 'FAIL', `flicks ${before} -> ${i.earFlicks}, clip=${i.clip}`);
 }
 
 // Click body -> Wave or Shrug.
