@@ -697,6 +697,61 @@ def make_clips(rig: Rig):
     clips.append(Clip("Jump", 1.7, [(0, stand), (T_SQ, j_sq), (0.70, j_up), (T_LAND + 0.12, j_land), (1.7, stand)],
                       jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
 
+    # ---- Dance (one-shot, 6 s): groove side to side on the beat with alternating paws raised,
+    # hop + full turn with the arms out, cheer with both paws up shaking, little bow
+    def dance_arms(p, up_side):
+        for s, sx in (("L", 1), ("R", -1)):
+            if s == up_side:      # up and out beside the head, like the wave (the head is big)
+                L.arm(p, s, (sx * 0.340, -0.100, 0.460), aim=(sx * 0.40, -0.20, 1.0), palm=(0.0, -1.0, 0.15))
+            else:
+                L.arm(p, s, (sx * 0.240, -0.030, 0.220), aim=(sx * 0.45, 0.0, -1.0))
+        return p
+    dz = stand.copy().expression(eyes="happy", mouth="open")
+    d_ready = dz.copy()
+    for s in ("L", "R"):
+        d_ready.set(f"thigh_{s}", x=-16); d_ready.set(f"shin_{s}", x=22); d_ready.set(f"foot_{s}", x=-6)
+    g_l = dance_arms(dz.copy(), "L")
+    g_r = dance_arms(dz.copy(), "R")
+    d_out = dz.copy()
+    for s, sx in (("L", 1), ("R", -1)):
+        L.arm(d_out, s, (sx * 0.300, -0.040, 0.340), aim=(sx * 1.0, -0.10, 0.25))
+    d_cheer = dz.copy()
+    for s, sx in (("L", 1), ("R", -1)):
+        L.arm(d_cheer, s, (sx * 0.300, -0.100, 0.460), aim=(sx * 0.50, -0.20, 1.0))
+    d_bow = stand.copy().expression(eyes="happy")
+    d_bow.add("spine", x=8).add("chest", x=6).add("neck", x=4).add("head", x=8)
+    BEAT = 0.6
+
+    def dance_ov(t, p):
+        # groove (0.4 .. 2.8 s): sway to one side per beat, bounce on every beat
+        g = smoother((t - 0.35) / 0.2) * (1 - smoother((t - 2.75) / 0.2))
+        ph = math.pi * (t - 0.4) / BEAT
+        sway = math.sin(ph)
+        p.loc["root"] = np.array([0.018 * g * sway, 0.0, 0.0])
+        p.add("hips", y=6 * g * sway).add("spine", y=-3 * g * sway)
+        p.add("head", y=-8 * g * sway, x=3 * g * abs(sway))
+        hop = 0.013 * g * abs(sway)
+        # hop + full turn (2.85 .. 3.75 s)
+        u = min(max((t - 2.85) / 0.9, 0.0), 1.0)
+        if 0.0 < u < 1.0:
+            p.add("root", z=360.0 * smoother(u))
+            hop += 0.05 * math.sin(math.pi * u)
+        # cheer (3.9 .. 5.3 s): paws shake, two bounces
+        c = smoother((t - 3.85) / 0.2) * (1 - smoother((t - 5.2) / 0.25))
+        shake = math.sin(2 * math.pi * 4.0 * t)
+        for s, sx in (("L", 1), ("R", -1)):
+            p.add(f"forearm_{s}", y=-sx * 12 * c * shake)
+        hop += 0.02 * c * abs(math.sin(math.pi * (t - 3.9) / 0.6))
+        p.hop = hop
+        e = max(g, c)
+        tail_wag(t, p, rate=1 / BEAT, amp=24 * e)
+        p.add("ear_L", x=-10 * e * abs(sway)); p.add("ear_R", x=-10 * e * abs(sway))
+        breathe(t, p, rate=0.5, amt=0.4)
+    clips.append(Clip("Dance", 6.0, [(0, stand), (0.35, d_ready), (0.7, g_l), (1.3, g_r), (1.9, g_l), (2.5, g_r),
+                                     (2.85, d_out), (3.75, d_out), (4.05, d_cheer), (5.1, d_cheer), (5.5, d_bow),
+                                     (6.0, stand)],
+                      dance_ov, meta=dict(priority=2, lookAt=0.2, refTime=1.3)))
+
     # Pet (loop): leaning into the hand, eyes ^^, ears back, tail wagging
     pet = stand.copy().expression(eyes="happy"); pet.add("head", x=2)
     pet = L.clasp(pet, head_margin=0.022)       # room for the nuzzling head sway (overlay)

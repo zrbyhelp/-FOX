@@ -359,6 +359,11 @@
       "name": "Type",
       "loop": true,
       "ref": null
+    },
+    {
+      "name": "Dance",
+      "loop": false,
+      "ref": null
     }
   ],
   "meshes": [
