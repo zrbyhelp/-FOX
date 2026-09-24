@@ -209,7 +209,7 @@ class Lib:
     def sit(self, p=None, lean=0.0):
         """Sitting on the floor, legs forward (soles to the camera), tail curled to the left."""
         p = p or Pose()
-        p.set("hips", x=-10)
+        p.set("hips", x=-4)
         p.set("spine", x=7 + lean)
         p.set("chest", x=4)
         for s in ("L", "R"):
@@ -217,7 +217,7 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=4, z=10)                         # lying on the floor beside the fox
+        p.set("tail_1", x=0, z=10)                         # lying on the floor beside the fox
         tail_curve(p, x=-10, z=0, start=2, falloff=0.95)
         return p
 
@@ -311,7 +311,7 @@ class FlapGuard:
         self.trees = {"scarfFlap_1": cKDTree(pts[seen & ~own2]), "scarfFlap_2": cKDTree(pts[own2])}
         self.flap_pts = {"scarfFlap_1": pts[seen & ~own2][::3], "scarfFlap_2": pts[own2][::3]}
         byname = {p.name: p for p in parts}
-        self.arms = Skin(rig, [byname["Arm_L"], byname["Arm_R"]], stride=2)
+        self.arms = Skin(rig, [byname["Arm_L"], byname["Arm_R"]])   # every vertex (thin flap)
 
     @staticmethod
     def apply(pose, lat, a1, a2):
@@ -631,7 +631,7 @@ def make_clips(rig: Rig):
     doze = L.sit(lean=4)
     doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
-    L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.004)
+    L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016)  # room to nod
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):
