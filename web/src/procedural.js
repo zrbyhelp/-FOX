@@ -47,7 +47,7 @@ const TAP_HOVER = 0.008; // paw tip rest height above the keycaps
 // switches a feature (a step, a short crossfade), it eases in / out over ~0.35 s: a critically
 // damped follower of the animated visibility, shaped by a smoothstep.
 const EXPRESSIONS = ['eyeOpen_L', 'eyeOpen_R', 'eyeHappy_L', 'eyeHappy_R', 'eyeSleep_L', 'eyeSleep_R', 'brow_L', 'brow_R', 'mouthSmile', 'mouthOpen'];
-const EXPR_OMEGA = 11;
+const EXPR_OMEGA = 10;
 const HIDDEN = 0.001;
 
 // Blink: eased close (40 %) and open, ~0.2 s; sometimes a double blink.
@@ -169,8 +169,9 @@ class Kinematics {
  * Typing fallback pose for one arm (rest joints S shoulder, E elbow, W wrist, F paw tip; model
  * space, character forward +Z, left +X), rotations as updateTypingArms applies them: the upper
  * arm swings forward (about +X) and in (about +Z), the forearm and the paw bend about +X. A
- * coarse-to-fine grid search puts the wrist behind and above `target` (the paw ~45 deg down),
- * then the paw aims its tip TAP_HOVER above the target. `side` = +1 left, -1 right.
+ * coarse-to-fine grid search puts the wrist behind and above `target` (the paw ~45 deg down)
+ * with the paw tip level with it sideways, then the paw aims its tip TAP_HOVER above the target.
+ * `side` = +1 left, -1 right.
  */
 function solveArm({ S, E, W, F }, target, side) {
   const X = new THREE.Vector3(1, 0, 0);
@@ -191,7 +192,8 @@ function solveArm({ S, E, W, F }, target, side) {
   };
   const cost = (a, b, c) => {
     pose(a, b, c);
-    return w.distanceToSquared(wrist) + 2e-5 * (a * a + b * b + c * c); // prefer small bends
+    // wrist height / depth, and the tip's sideways place (the paw only bends about X after this)
+    return (w.y - wrist.y) ** 2 + (w.z - wrist.z) ** 2 + (f.x - tip.x) ** 2 + 2e-6 * (a * a + b * b + c * c);
   };
   let best = { a: ARM_LIFT.upperArm, b: 0, c: ARM_LIFT.forearm, cost: Infinity };
   const search = (a0, a1, b0, b1, c0, c1, stepDeg) => {
@@ -205,7 +207,7 @@ function solveArm({ S, E, W, F }, target, side) {
       }
     }
   };
-  search(-95 * DEG, 5 * DEG, -10 * DEG, 40 * DEG, -110 * DEG, 10 * DEG, 3);
+  search(-95 * DEG, 5 * DEG, -10 * DEG, 60 * DEG, -110 * DEG, 10 * DEG, 3);
   const { a, b, c } = best;
   search(a - 3 * DEG, a + 3 * DEG, b - 3 * DEG, b + 3 * DEG, c - 3 * DEG, c + 3 * DEG, 0.5);
   pose(best.a, best.b, best.c);

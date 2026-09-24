@@ -395,11 +395,12 @@ export class MagicKeyboard {
 
   /**
    * Where a paw taps (the keyboard's parent space, at rest: no float, no pop): the top of the
-   * home row under the fox's left ('L', +x) or right paw. Aimed at by the typing fallback.
+   * row nearest the fox (the short arms reach it comfortably), under its left ('L', +x) or
+   * right paw. Aimed at by the typing fallback.
    */
   tapPoint(side, out = new THREE.Vector3()) {
-    const x = (side === 'L' ? 1 : -1) * this.size.W * 0.3;
-    out.set(x, this.capTop, this.rowZ(2)).applyAxisAngle(new THREE.Vector3(1, 0, 0), this.tilt.rotation.x);
+    const x = (side === 'L' ? 1 : -1) * this.size.W * 0.35;
+    out.set(x, this.capTop, this.rowZ(ROWS.length - 1)).applyAxisAngle(new THREE.Vector3(1, 0, 0), this.tilt.rotation.x);
     return out.add(this.home);
   }
 
