@@ -187,7 +187,7 @@ class Lib:
 
     def wave_up(self, p, side="L", swing=0.0):
         sx = 1 if side == "L" else -1
-        self.arm(p, side, (sx * 0.312, -0.118, 0.462), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
+        self.arm(p, side, (sx * 0.360, -0.100, 0.440), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
         return p
 
     def present(self, p, side="R"):
@@ -217,8 +217,8 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=14, z=0)                         # straight out of the butt first...
-        tail_curve(p, x=-14, z=-24, start=2, falloff=0.95) # ...then curl down and round to the side
+        p.set("tail_1", x=4, z=10)                         # lying on the floor beside the fox
+        tail_curve(p, x=-10, z=0, start=2, falloff=0.95)
         return p
 
     def stand_legs(self, p):
@@ -618,7 +618,7 @@ def make_clips(rig: Rig):
     think = L.sit()
     think.add("neck", y=-4).add("head", y=-11, z=-8, x=3)
     L.paw_chest(think, "L", low=True)
-    L.arm(think, "R", (-0.075, -0.232, 0.350), aim=(0.35, -0.35, 1.0), head_margin=-0.004)
+    L.arm(think, "R", (-0.088, -0.236, 0.346), aim=(0.35, -0.35, 1.0), head_margin=0.002)
     think.expression(brows="left")
     def think_ov(t, p):
         ph = 2 * math.pi * t / 4.0
@@ -631,7 +631,7 @@ def make_clips(rig: Rig):
     doze = L.sit(lean=4)
     doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
-    L.arm(doze, "R", (-0.088, -0.232, 0.346), aim=(0.30, -0.30, 1.0), head_margin=-0.004)
+    L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.004)
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):
@@ -703,10 +703,11 @@ def make_clips(rig: Rig):
     # LookBack: turn toward the tail (fox's left/back), tail swish
     lb = stand.copy()
     lb.add("spine", z=14).add("chest", z=16).add("neck", z=14).add("head", z=26, x=4, y=6)
+    lb.add("tail_1", z=15)          # the tail swings out of the way of the turning body
     def lb_ov(t, p):
         env = smoother((t - 0.3) / 0.3) * (1 - smoother((t - 1.9) / 0.4))
         for i in range(1, 7):
-            p.add(f"tail_{i}", z=-34 * env * (0.3 + 0.12 * i) * math.sin(2 * math.pi * 1.3 * t - 0.6 * i),
+            p.add(f"tail_{i}", z=-24 * env * (0.3 + 0.12 * i) * math.sin(2 * math.pi * 1.3 * t - 0.6 * i),
                   x=8 * env)
         breathe(t, p, 0.5, 0.5)
     clips.append(Clip("LookBack", 2.4, [(0, stand), (0.45, lb), (1.9, lb), (2.4, stand)], lb_ov,

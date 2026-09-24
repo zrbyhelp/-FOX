@@ -68,7 +68,7 @@ def head_weights(V):
 def _leg_share(V):
     """How much of the body surface is leg (the legs grow out of the belly): 0 on the torso and
     the crotch centre line, 1 on the lower leg."""
-    return S.smoothstep(0.160, 0.112, V[:, 2]) * S.smoothstep(0.014, 0.046, np.abs(V[:, 0]))
+    return S.smoothstep(0.188, 0.100, V[:, 2]) * S.smoothstep(0.010, 0.050, np.abs(V[:, 0]))
 
 
 def body_colors(V, N):
@@ -97,7 +97,7 @@ def body_weights(V):
     for k in ("hips", "spine", "chest", "neck"):
         W[k] = W[k] / s * (1 - leg)
     W["breath"] *= 1 - leg
-    shin = leg * S.smoothstep(0.112, 0.078, z)
+    shin = leg * S.smoothstep(0.118, 0.070, z)
     for side, m in (("L", x > 0), ("R", x <= 0)):
         W[f"thigh_{side}"] = np.where(m, leg - shin, 0.0)
         W[f"shin_{side}"] = np.where(m, shin, 0.0)
