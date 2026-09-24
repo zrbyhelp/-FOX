@@ -1,0 +1,10 @@
+{
+  "Idle": {
+    "loop": true,
+    "duration": 4.0
+  },
+  "Wave": {
+    "loop": false,
+    "duration": 2.0
+  }
+}

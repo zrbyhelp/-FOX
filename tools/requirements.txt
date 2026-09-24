@@ -1,0 +1,9 @@
+# Install everything in ONE pip command so numpy 2.x never sneaks in (bpy 4.5 requires numpy<2):
+#   python3.11 -m venv .venv && .venv/bin/pip install -r tools/requirements.txt
+# Linux containers additionally need: apt-get install libopengl0 libglu1-mesa  (pymeshlab plugins)
+bpy==4.5.*
+numpy>=1.26,<2
+scikit-image>=0.24
+pymeshlab>=2023.12
+pillow>=10
+pygltflib>=1.16

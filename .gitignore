@@ -1,0 +1,9 @@
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+web/dist/
+build/
+*.blend1
+.build.lock
+web/public/models/dev/

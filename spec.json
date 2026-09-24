@@ -1,0 +1,540 @@
+{
+  "_comment": "Shared contract between tools/ (Python, Blender) and web/ (Three.js). Names here are exact glTF node / clip / material names. Coordinates in 'gltf' blocks are glTF/three space (Y up, fox faces +Z, fox's LEFT = +X). Blender space: Z up, fox faces -Y, fox's LEFT = +X.",
+  "version": 1,
+  "units": "1.0 = fox height from ground to ear tip",
+  "bones": [
+    {
+      "name": "root",
+      "parent": null,
+      "kind": "deform"
+    },
+    {
+      "name": "hips",
+      "parent": "root",
+      "kind": "deform"
+    },
+    {
+      "name": "spine",
+      "parent": "hips",
+      "kind": "deform"
+    },
+    {
+      "name": "breath",
+      "parent": "spine",
+      "kind": "deform"
+    },
+    {
+      "name": "chest",
+      "parent": "spine",
+      "kind": "deform"
+    },
+    {
+      "name": "neck",
+      "parent": "chest",
+      "kind": "deform"
+    },
+    {
+      "name": "head",
+      "parent": "neck",
+      "kind": "deform"
+    },
+    {
+      "name": "ear_L",
+      "parent": "head",
+      "kind": "deform"
+    },
+    {
+      "name": "earTip_L",
+      "parent": "ear_L",
+      "kind": "deform"
+    },
+    {
+      "name": "ear_R",
+      "parent": "head",
+      "kind": "deform"
+    },
+    {
+      "name": "earTip_R",
+      "parent": "ear_R",
+      "kind": "deform"
+    },
+    {
+      "name": "eyeOpen_L",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "eyeOpen_R",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "eyeHappy_L",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "eyeHappy_R",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "eyeSleep_L",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "eyeSleep_R",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "brow_L",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "brow_R",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "mouthSmile",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "mouthOpen",
+      "parent": "head",
+      "kind": "expression"
+    },
+    {
+      "name": "shoulder_L",
+      "parent": "chest",
+      "kind": "deform"
+    },
+    {
+      "name": "upperArm_L",
+      "parent": "shoulder_L",
+      "kind": "deform"
+    },
+    {
+      "name": "forearm_L",
+      "parent": "upperArm_L",
+      "kind": "deform"
+    },
+    {
+      "name": "paw_L",
+      "parent": "forearm_L",
+      "kind": "deform"
+    },
+    {
+      "name": "shoulder_R",
+      "parent": "chest",
+      "kind": "deform"
+    },
+    {
+      "name": "upperArm_R",
+      "parent": "shoulder_R",
+      "kind": "deform"
+    },
+    {
+      "name": "forearm_R",
+      "parent": "upperArm_R",
+      "kind": "deform"
+    },
+    {
+      "name": "paw_R",
+      "parent": "forearm_R",
+      "kind": "deform"
+    },
+    {
+      "name": "scarf",
+      "parent": "chest",
+      "kind": "deform"
+    },
+    {
+      "name": "scarfFlap_1",
+      "parent": "scarf",
+      "kind": "deform"
+    },
+    {
+      "name": "scarfFlap_2",
+      "parent": "scarfFlap_1",
+      "kind": "deform"
+    },
+    {
+      "name": "thigh_L",
+      "parent": "hips",
+      "kind": "deform"
+    },
+    {
+      "name": "shin_L",
+      "parent": "thigh_L",
+      "kind": "deform"
+    },
+    {
+      "name": "foot_L",
+      "parent": "shin_L",
+      "kind": "deform"
+    },
+    {
+      "name": "thigh_R",
+      "parent": "hips",
+      "kind": "deform"
+    },
+    {
+      "name": "shin_R",
+      "parent": "thigh_R",
+      "kind": "deform"
+    },
+    {
+      "name": "foot_R",
+      "parent": "shin_R",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_1",
+      "parent": "hips",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_2",
+      "parent": "tail_1",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_3",
+      "parent": "tail_2",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_4",
+      "parent": "tail_3",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_5",
+      "parent": "tail_4",
+      "kind": "deform"
+    },
+    {
+      "name": "tail_6",
+      "parent": "tail_5",
+      "kind": "deform"
+    }
+  ],
+  "expressions": {
+    "_comment": "Expression control bones all point straight up (Blender +Z) with roll 0, so bone-local Y == world vertical and bone-local Z == depth (towards the face front). Hidden = local scale (1, 0.001, 0.001): the feature collapses vertically AND sinks back to its pivot, which sits 3-5 mm INSIDE the head surface, so nothing is rasterised. Visible = (1,1,1). Never use exact 0. Blink multiplies eyeOpen_* scale.y.",
+    "hiddenScale": [
+      1.0,
+      0.001,
+      0.001
+    ],
+    "collapseAxis": "y",
+    "defaultVisible": [
+      "eyeOpen_L",
+      "eyeOpen_R",
+      "mouthSmile"
+    ],
+    "defaultHidden": [
+      "eyeHappy_L",
+      "eyeHappy_R",
+      "eyeSleep_L",
+      "eyeSleep_R",
+      "brow_L",
+      "brow_R",
+      "mouthOpen"
+    ],
+    "sets": {
+      "neutral": {
+        "eyes": "open",
+        "brows": "none",
+        "mouth": "smile"
+      },
+      "happy": {
+        "eyes": "happy",
+        "brows": "none",
+        "mouth": "smile"
+      },
+      "talk": {
+        "eyes": "open",
+        "brows": "none",
+        "mouth": "open"
+      },
+      "worried": {
+        "eyes": "open",
+        "brows": "both",
+        "mouth": "smile"
+      },
+      "thinking": {
+        "eyes": "open",
+        "brows": "left",
+        "mouth": "smile"
+      },
+      "sleep": {
+        "eyes": "sleep",
+        "brows": "none",
+        "mouth": "smile"
+      }
+    }
+  },
+  "clips": [
+    {
+      "name": "Idle",
+      "loop": true,
+      "ref": null
+    },
+    {
+      "name": "Idle_LookAround",
+      "loop": false,
+      "ref": null
+    },
+    {
+      "name": "Wave",
+      "loop": false,
+      "ref": 2
+    },
+    {
+      "name": "Happy",
+      "loop": false,
+      "ref": 1
+    },
+    {
+      "name": "Heart",
+      "loop": false,
+      "ref": 7
+    },
+    {
+      "name": "Present",
+      "loop": false,
+      "ref": 3
+    },
+    {
+      "name": "Reach",
+      "loop": false,
+      "ref": 5
+    },
+    {
+      "name": "Shrug",
+      "loop": false,
+      "ref": 6
+    },
+    {
+      "name": "SitDown",
+      "loop": false,
+      "ref": null
+    },
+    {
+      "name": "Sit_Think",
+      "loop": true,
+      "ref": 4
+    },
+    {
+      "name": "Sit_Doze",
+      "loop": true,
+      "ref": 8
+    },
+    {
+      "name": "StandUp",
+      "loop": false,
+      "ref": null
+    },
+    {
+      "name": "Jump",
+      "loop": false,
+      "ref": null
+    },
+    {
+      "name": "Pet",
+      "loop": true,
+      "ref": null
+    },
+    {
+      "name": "LookBack",
+      "loop": false,
+      "ref": null
+    }
+  ],
+  "meshes": [
+    "Head",
+    "Body",
+    "Arm_L",
+    "Arm_R",
+    "Leg_L",
+    "Leg_R",
+    "Tail",
+    "Scarf",
+    "ScarfFlap",
+    "Eye_L",
+    "Eye_R",
+    "EyeHappy_L",
+    "EyeHappy_R",
+    "EyeSleep_L",
+    "EyeSleep_R",
+    "Brow_L",
+    "Brow_R",
+    "Nose",
+    "MouthSmile",
+    "MouthOpen"
+  ],
+  "materials": {
+    "Fur": "velvet body fur; vertex colours (COLOR_0) carry cream/white/orange/blush; _AO attribute optional",
+    "Scarf": "orange-red knit; has TEXCOORD_0 for tiling knit normal map; white squares painted via vertex colour",
+    "Eye": "dark brown glossy (clearcoat)",
+    "EyeHighlight": "white, unlit-ish",
+    "Line": "dark brown lines (closed eyes, brows, mouth line)",
+    "Nose": "dark brown glossy",
+    "MouthInside": "dark red",
+    "Tongue": "pink",
+    "LogoCube": "cream semi-gloss (logo.glb)",
+    "LogoStar": "orange gloss (logo.glb)"
+  },
+  "logo": {
+    "_comment": "Logo group anchor (centre of the 4-cube diamond) in glTF space, fox's right side = viewer's left in the ref34 camera.",
+    "gltf": {
+      "position": [
+        -0.56,
+        0.5,
+        0.2
+      ],
+      "scale": 1.0
+    },
+    "pieces": [
+      "Cube_Top",
+      "Cube_Left",
+      "Cube_Right",
+      "Cube_Bottom",
+      "Star"
+    ]
+  },
+  "cameras": {
+    "_comment": "glTF/three space. ref34 approximates the reference renders (fox turned ~25deg to viewer's left).",
+    "ref34": {
+      "position": [
+        0.95,
+        0.62,
+        2.35
+      ],
+      "target": [
+        -0.18,
+        0.5,
+        0.0
+      ],
+      "fov": 30
+    },
+    "front": {
+      "position": [
+        0.0,
+        0.55,
+        2.6
+      ],
+      "target": [
+        0.0,
+        0.5,
+        0.0
+      ],
+      "fov": 30
+    },
+    "side": {
+      "position": [
+        2.6,
+        0.55,
+        0.0
+      ],
+      "target": [
+        0.0,
+        0.5,
+        0.0
+      ],
+      "fov": 30
+    },
+    "back34": {
+      "position": [
+        1.6,
+        0.9,
+        -1.9
+      ],
+      "target": [
+        0.0,
+        0.45,
+        0.0
+      ],
+      "fov": 30
+    },
+    "top": {
+      "position": [
+        0.0,
+        2.8,
+        0.25
+      ],
+      "target": [
+        0.0,
+        0.3,
+        0.0
+      ],
+      "fov": 30
+    },
+    "closeup": {
+      "position": [
+        0.35,
+        0.68,
+        1.2
+      ],
+      "target": [
+        0.0,
+        0.62,
+        0.0
+      ],
+      "fov": 30
+    }
+  },
+  "colliders": {
+    "_comment": "Invisible raycast proxies attached to bones (bone-local offset in metres, glTF bone space).",
+    "head": {
+      "bone": "head",
+      "radius": 0.27,
+      "offset": [
+        0,
+        0.15,
+        0.0
+      ]
+    },
+    "ear_L": {
+      "bone": "ear_L",
+      "radius": 0.08,
+      "offset": [
+        0,
+        0.1,
+        0
+      ]
+    },
+    "ear_R": {
+      "bone": "ear_R",
+      "radius": 0.08,
+      "offset": [
+        0,
+        0.1,
+        0
+      ]
+    },
+    "body": {
+      "bone": "spine",
+      "radius": 0.2,
+      "offset": [
+        0,
+        0.0,
+        0
+      ]
+    },
+    "tail": {
+      "bone": "tail_3",
+      "radius": 0.15,
+      "offset": [
+        0,
+        0.05,
+        0
+      ]
+    }
+  }
+}

@@ -1,0 +1,2 @@
+html, body { margin: 0; height: 100%; overflow: hidden; background: #eceae9; }
+#stage { display: block; width: 100vw; height: 100vh; touch-action: none; }
