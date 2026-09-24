@@ -5,7 +5,7 @@
 //
 //   node scripts/motion_live.mjs                          # fox.glb via a temporary vite server
 //   node scripts/motion_live.mjs --query model=dev/m1.glb
-//   node scripts/motion_live.mjs --only Jump,Enter --json out.json
+//   node scripts/motion_live.mjs --only Jump,Exit/Enter --json out.json   (Exit/Enter = wave + pop away, pop in + wave)
 //
 // A spike is a frame-to-frame rotation above 25 deg/frame, or a change of angular velocity
 // above 12 deg/frame^2 (both at 60 Hz). Exit code is always 0 (this is a report, not a gate).

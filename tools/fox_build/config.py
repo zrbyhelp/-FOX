@@ -72,10 +72,10 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.168, 0.014, 0.800),
-    "ear_tip": (0.268, 0.036, 1.012),       # ~25 deg out from vertical, like the art
-    "ear_base_width": 0.232,                # big, tall rounded-point ears (w/h ~0.95)
-    "ear_thickness": 0.076,
+    "ear_base": (0.172, 0.016, 0.795),
+    "ear_tip": (0.290, 0.040, 1.035),       # ~26 deg out from vertical, like the art
+    "ear_base_width": 0.250,                # big, tall rounded-point ears (w/h ~0.93)
+    "ear_thickness": 0.078,
     # face anchors (x, z); y is projected onto the head surface at build time
     "eye_xz": (0.119, 0.590),
     "eye_size": (0.067, 0.080),               # width, height of the open eye
@@ -92,15 +92,15 @@ P = {
     # neck / scarf
     "scarf_z": 0.405,
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
-    "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
+    "scarf_tube_radius": (0.056, 0.050),     # vertical, radial half-thickness (chunky knit)
     # limbs
-    "arm_radius": 0.046,                     # half-width at the shoulder (widens to the paw)
-    "paw_radius": 0.055,                     # half-width of the paw, the widest part
-    "leg_radius": 0.066,
-    "foot_size": (0.118, 0.128, 0.088),      # x width, y length, z height
+    "arm_radius": 0.049,                     # half-width at the shoulder (widens to the paw)
+    "paw_radius": 0.057,                     # half-width of the paw, the widest part
+    "leg_radius": 0.073,
+    "foot_size": (0.130, 0.138, 0.092),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
-    "tail_radius_profile": [(0.0, 0.048), (0.10, 0.088), (0.32, 0.145), (0.52, 0.140),
-                            (0.72, 0.098), (0.86, 0.054), (0.95, 0.020), (1.0, 0.0)],
+    "tail_radius_profile": [(0.0, 0.050), (0.10, 0.095), (0.30, 0.152), (0.52, 0.156),
+                            (0.72, 0.124), (0.86, 0.080), (0.95, 0.040), (1.0, 0.0)],
     "tail_flatten": 0.92,                    # cross-section squash (lateral)
     "tail_orange_from": 0.68,                # t where the orange tip gradient starts
 }
@@ -195,9 +195,10 @@ def bone_table() -> dict:
     b["scarfFlap_1"] = ("scarf", (0.075, -0.125, 0.385), (0.083, -0.148, 0.31))
     b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.148, 0.31), (0.09, -0.155, 0.235))
     for s, sx in (("L", 1), ("R", -1)):
-        b[f"thigh_{s}"] = ("hips", (sx * 0.078, 0.0, 0.17), (sx * 0.078, 0.0, 0.105))
-        b[f"shin_{s}"] = (f"thigh_{s}", (sx * 0.078, 0.0, 0.105), (sx * 0.078, 0.0, 0.045))
-        b[f"foot_{s}"] = (f"shin_{s}", (sx * 0.078, 0.0, 0.045), (sx * 0.078, -0.075, 0.035))
+        lx = sx * 0.088   # thick legs a little apart: a clear rounded notch between them
+        b[f"thigh_{s}"] = ("hips", (lx, 0.0, 0.17), (lx, 0.0, 0.105))
+        b[f"shin_{s}"] = (f"thigh_{s}", (lx, 0.0, 0.105), (lx, 0.0, 0.045))
+        b[f"foot_{s}"] = (f"shin_{s}", (lx, 0.0, 0.045), (lx, -0.075, 0.035))
     pts = _tail_points(6)
     parent = "hips"
     for i in range(6):

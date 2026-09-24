@@ -62,7 +62,7 @@ async function shot(name) {
   await page.screenshot({ path: file });
   shots.push(file);
 }
-const info = () => page.evaluate(() => { const i = window.__live2d.debug.info(); delete i.params; return i; });
+const info = () => page.evaluate(() => { const i = window.__live2d.debug.info(); for (const k of ['params', 'keyArea', 'paws']) delete i[k]; return i; });
 const waitFor = (fn, arg, timeout = 15000) => page.waitForFunction(fn, arg, { timeout, polling: 50 }).then(() => true, () => false);
 
 try {

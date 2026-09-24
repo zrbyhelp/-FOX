@@ -169,7 +169,7 @@ def _body_radius(theta, z):
 
 
 SCARF_FLAP_THETA = -np.pi / 2 + 0.60
-FLAP_HW, FLAP_HT = 0.043, 0.0115          # flap half width / half thickness
+FLAP_HW, FLAP_HT = 0.050, 0.0125          # flap half width / half thickness
 
 
 def scarf_ring_mesh(n_u=96, n_v=20, u_repeat=14):

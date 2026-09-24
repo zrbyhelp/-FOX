@@ -70,9 +70,9 @@ def _ear_shape(q, inner=False):
     parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
     hw = P["ear_base_width"] / 2
     fz = 0.74                                     # cone flattening front-back (keeps volume)
-    r_tip = 0.025                                 # softly pointed tip
+    r_tip = 0.028                                 # softly pointed tip
     if inner:
-        rim = 0.024                               # cream rim around a big orange scoop
+        rim = 0.026                               # cream rim around a big orange scoop
         qi = q.copy()
         qi[:, 2] = (q[:, 2] - 0.025) / fz
         cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.042, 0), hw - rim, r_tip * 0.5) * fz
@@ -92,7 +92,7 @@ def ear_local(p):
 def head_core(p):
     """Head without ears."""
     q = S.mirror_x(p)
-    skull = S.ellipsoid(p, (0, 0.0, 0.658), (0.280, 0.220, 0.220))
+    skull = S.ellipsoid(p, (0, 0.0, 0.664), (0.288, 0.226, 0.232))     # full, round top
     cheeks = S.ellipsoid(p, (0, -0.020, 0.562), (0.300, 0.198, 0.158))
     d = S.smin(skull, cheeks, 0.09)
     muzzle = S.ellipsoid(p, (0, -0.160, 0.547), (0.090, 0.058, 0.055))
@@ -119,14 +119,14 @@ def head_sdf(p):
     return d
 
 
-HEAD_BBOX = ((-0.42, -0.27, 0.36), (0.42, 0.26, 1.07))
+HEAD_BBOX = ((-0.44, -0.28, 0.36), (0.44, 0.27, 1.10))
 
 
 def _leg_column(q):
     """Left leg (use with mirror_x): a short thick column growing out of the belly."""
     hip, knee, ankle, toe = _leg_pts("L")
-    top = np.array([hip[0] + 0.004, -0.006, 0.165])
-    bot = np.array([ankle[0] + 0.006, -0.026, 0.068])
+    top = np.array([hip[0], -0.006, 0.165])
+    bot = np.array([ankle[0] + 0.002, -0.026, 0.068])
     return S.round_cone(q, top, bot, P["leg_radius"] * 1.05, P["leg_radius"] * 0.90)
 
 
@@ -135,12 +135,12 @@ def body_sdf(p):
     into two short thick legs with a rounded notch between them (like the art); the feet are
     separate parts (leg_sdf)."""
     # the pear ends ~0.11 above the floor so the short legs read below it
-    lower = S.ellipsoid(p, (0, 0.012, 0.236), (0.172, 0.158, 0.126))
-    upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.128, 0.112, 0.128))
+    lower = S.ellipsoid(p, (0, 0.012, 0.236), (0.188, 0.168, 0.128))
+    upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.138, 0.120, 0.128))
     d = S.smin(lower, upper, 0.12)
-    belly = S.ellipsoid(p, (0, -0.042, 0.236), (0.140, 0.125, 0.118))
+    belly = S.ellipsoid(p, (0, -0.044, 0.236), (0.152, 0.132, 0.120))
     d = S.smin(d, belly, 0.05)
-    butt = S.ellipsoid(p, (0, 0.070, 0.200), (0.148, 0.116, 0.098))
+    butt = S.ellipsoid(p, (0, 0.072, 0.200), (0.158, 0.122, 0.100))
     d = S.smin(d, butt, 0.05)
     return S.smin(d, _leg_column(S.mirror_x(p)), 0.050)
 
@@ -156,7 +156,7 @@ def _arm_pts(side="L"):
 
 
 ARM_FLAT = 0.80        # arm / paw thickness : width (flattened, not a round tube)
-ARM_WIDEN = 1.14       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
+ARM_WIDEN = 1.12       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
 
 
 def arm_sdf(p, side="L"):

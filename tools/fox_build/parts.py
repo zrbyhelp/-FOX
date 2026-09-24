@@ -123,8 +123,8 @@ def arm_colors(V, N, side="L"):
     L1 = np.linalg.norm(el - sh); L2 = L1 + np.linalg.norm(wr - el)
     Lt = L2 + np.linalg.norm(tip - wr)
     cream = C.linear("fur")
-    g1 = S.smoothstep(L2 - 0.022, L2 + 0.020, s)       # cream -> light orange (paw, soft edge)
-    g2 = S.smoothstep(L2 + 0.012, Lt + 0.010, s)       # light -> orange at the toes
+    g1 = S.smoothstep(L2 - 0.006, L2 + 0.032, s)       # cream -> light orange over the paw
+    g2 = S.smoothstep(L2 + 0.026, Lt + 0.012, s)       # light -> orange at the tip only
     col = _mix(np.tile(cream, (len(V), 1)), C.linear("orange_light"), g1)
     return _mix(col, C.linear("orange"), g2)
 
