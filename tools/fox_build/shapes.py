@@ -124,9 +124,9 @@ HEAD_BBOX = ((-0.44, -0.28, 0.36), (0.44, 0.27, 1.10))
 
 def _leg_column(q):
     """Left leg (use with mirror_x): a short thick column growing out of the belly."""
-    hip, knee, ankle, toe = _leg_pts("L")
-    top = np.array([hip[0], -0.006, 0.165])
-    bot = np.array([ankle[0] + 0.002, -0.026, 0.068])
+    # (constants, not the bone table: the flap bones are placed on this body's surface)
+    top = np.array([C.LEG_X, -0.006, 0.165])
+    bot = np.array([C.LEG_X + 0.002, -0.026, 0.068])
     return S.round_cone(q, top, bot, P["leg_radius"] * 1.05, P["leg_radius"] * 0.90)
 
 

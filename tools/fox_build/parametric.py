@@ -1,6 +1,8 @@
 """Parametric meshes: swept tubes (tail, scarf ring, scarf flap), ellipsoids, flat patches."""
 from __future__ import annotations
 
+import functools
+
 import numpy as np
 
 from . import config as C
@@ -168,7 +170,7 @@ def _body_radius(theta, z):
     return np.linalg.norm(pts[:, :2], axis=1)
 
 
-SCARF_FLAP_THETA = -np.pi / 2 + 0.60
+SCARF_FLAP_THETA = -np.pi / 2 + 0.78    # toward the fox's left side, beside the arm (ref 1)
 FLAP_HW, FLAP_HT = 0.050, 0.0125          # flap half width / half thickness
 
 
@@ -257,6 +259,14 @@ def scarf_flap_mesh(n_len=44, n_seg=40, u_repeat=3.0):
         F = F[:, ::-1].copy(); Nn = -Nn
     front = np.concatenate([np.tile(ct, n_len + k_end), [0, 0]])
     return V, F, Nn, UV, vp, wp, front, (rad, tang, centers)
+
+
+@functools.lru_cache(maxsize=None)
+def flap_bone_points():
+    """Flap centre-line where the two flap bones start / meet / end (config.bone_table), so the
+    bones always sit inside the flap mesh whatever the body and scarf proportions."""
+    centers = scarf_flap_mesh()[-1][2]
+    return tuple(tuple(float(v) for v in centers[np.argmin(np.abs(centers[:, 2] - z))]) for z in (0.385, 0.31, 0.235))
 
 
 def scarf_flap_spheres(n_across=9):

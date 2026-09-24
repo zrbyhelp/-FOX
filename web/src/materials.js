@@ -17,9 +17,9 @@ export const PALETTE = {
 
 // Tunables for the procedural surface detail.
 export const SURFACE = {
-  furGrainScale: 260, // noise cells per unit (fox height = 1)
-  furGrainStrength: 0.22, // normal tilt from the flocked grain
-  furMottle: 0.06, // albedo variation from the same noise
+  furGrainScale: 165, // noise cells per unit (fox height = 1): a few px at the default framing
+  furGrainStrength: 0.30, // normal tilt from the flocked grain
+  furMottle: 0.09, // albedo variation from the same noise (velvet speckle)
   scarfGrainScale: 120, // used only when the scarf has no UVs
   knitRepeat: [2, 2], // knit tiles per UV unit (tune to the scarf's UV scale)
   knitNormalScale: 0.7,
@@ -28,12 +28,12 @@ export const SURFACE = {
 const DEFS = {
   Fur: () => new THREE.MeshPhysicalMaterial({
     vertexColors: true,
-    roughness: 0.9,
+    roughness: 0.94,
     metalness: 0,
     sheen: 1,
-    sheenRoughness: 0.45,
+    sheenRoughness: 0.55, // broad soft velvet rim instead of a plastic highlight
     sheenColor: new THREE.Color(PALETTE.sheen),
-    specularIntensity: 0.3,
+    specularIntensity: 0.16,
   }),
   Scarf: () => new THREE.MeshPhysicalMaterial({
     vertexColors: true,

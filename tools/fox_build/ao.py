@@ -57,7 +57,7 @@ CONTEXT = {
 
 
 # per-part (step, strength, floor): the face must stay bright right above the scarf
-PARAMS = {"Head": (0.008, 1.8, 0.6), "Scarf": (0.010, 2.0, 0.55)}
+PARAMS = {"Head": (0.008, 1.1, 0.80), "Scarf": (0.010, 2.0, 0.55)}
 
 
 def bake(name, V, N, steps=5, h=0.013, k=2.2, floor=0.45):

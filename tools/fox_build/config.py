@@ -124,6 +124,7 @@ TAIL_SPLINE = [
 _A = math.radians(40.0)
 _ARM_DIR = (math.sin(_A), 0.0, -math.cos(_A))
 SHOULDER = (0.118, -0.058, 0.346)      # upperArm pivot (fox's left), front-side of the chest
+LEG_X = 0.088                          # thick legs a little apart: a clear rounded notch between
 ARM_LEN = (0.072, 0.060, 0.048)        # upperArm, forearm, paw: short stubs like the art
 
 
@@ -192,10 +193,12 @@ def bone_table() -> dict:
         b[f"forearm_{s}"] = (f"upperArm_{s}", el, wr)
         b[f"paw_{s}"] = (f"forearm_{s}", wr, tip)
     b["scarf"] = ("chest", (0, 0.0, 0.405), (0, 0.0, 0.445))
-    b["scarfFlap_1"] = ("scarf", (0.075, -0.125, 0.385), (0.083, -0.148, 0.31))
-    b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.148, 0.31), (0.09, -0.155, 0.235))
+    from .parametric import flap_bone_points   # the flap follows the body surface
+    f0, f1, f2 = flap_bone_points()
+    b["scarfFlap_1"] = ("scarf", f0, f1)
+    b["scarfFlap_2"] = ("scarfFlap_1", f1, f2)
     for s, sx in (("L", 1), ("R", -1)):
-        lx = sx * 0.088   # thick legs a little apart: a clear rounded notch between them
+        lx = sx * LEG_X
         b[f"thigh_{s}"] = ("hips", (lx, 0.0, 0.17), (lx, 0.0, 0.105))
         b[f"shin_{s}"] = (f"thigh_{s}", (lx, 0.0, 0.105), (lx, 0.0, 0.045))
         b[f"foot_{s}"] = (f"shin_{s}", (lx, 0.0, 0.045), (lx, -0.075, 0.035))
