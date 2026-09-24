@@ -219,16 +219,18 @@ class Lib:
         return p
 
     def sit(self, p=None, lean=0.0):
-        """Sitting on the floor, legs forward (soles to the camera), tail curled to the left."""
+        """Sitting on the floor, legs forward in a little V (soles to the camera), tail curled to
+        the left. The legs are short and the belly is round: the pelvis rolls back a little and the
+        legs spread so the feet rest low beside / below the belly instead of pushing into it."""
         p = p or Pose()
-        p.set("hips", x=-4)
-        p.set("spine", x=7 + lean)
+        p.set("hips", x=-8)
+        p.set("spine", x=11 + lean)                        # the upper body stays as upright as before
         p.set("chest", x=4)
         for s in ("L", "R"):
             sx = 1 if s == "L" else -1
-            p.set(f"thigh_{s}", x=-50, z=sx * 12)
-            p.set(f"shin_{s}", x=-16)
-            p.set(f"foot_{s}", x=-30)
+            p.set(f"thigh_{s}", x=-45, z=sx * 28)
+            p.set(f"shin_{s}", x=-10)
+            p.set(f"foot_{s}", x=-10)
         p.set("tail_1", x=0, z=10)                         # lying on the floor beside the fox
         tail_curve(p, x=-10, z=0, start=2, falloff=0.95)
         return p
@@ -661,7 +663,7 @@ def make_clips(rig: Rig):
     clips.append(Clip("StandUp", 1.0, [(0, think), (0.45, squat), (0.88, stand), (1.0, stand)],
                       lambda t, p: breathe(t, p, 0.5, 0.3), meta=dict(priority=3, interruptible=False)))
 
-    # Jump (airborne: not grounded; hand-set root heights)
+    # Jump: grounded crouches, the airborne arc rides on top as a hop
     j_sq = squat.copy()     # arms stay hanging at the sides through the crouch
     j_up = stand.copy()
     for s, sx in (("L", 1), ("R", -1)):
@@ -675,18 +677,15 @@ def make_clips(rig: Rig):
         for s in ("L", "R"):
             j_land.rot[f"{b}_{s}"] = j_up.rot[f"{b}_{s}"].copy()
     T_SQ, T_TAKE, T_LAND, T_SET = 0.32, 0.36, 0.90, 1.12
-    def jump_root(t):
-        # squat -> take-off -> airborne arc (peak ~0.14) -> landing squash -> settle
-        if t < T_SQ:
-            return -0.03 * smoother(t / T_SQ)
-        if t < T_LAND:
+    def jump_hop(t):
+        # airborne arc between take-off and landing; the crouches are grounded poses (the feet
+        # stay on the floor instead of sinking into it)
+        if T_SQ <= t < T_LAND:
             u = (t - T_SQ) / (T_LAND - T_SQ)
-            return -0.03 + (0.17 * 4 * u * (1 - u)) + 0.03 * u
-        if t < T_SET:
-            return -0.028 * math.sin(math.pi * (t - T_LAND) / (T_SET - T_LAND))
+            return 0.17 * 4 * u * (1 - u)
         return 0.0
     def jump_ov(t, p):
-        p.loc["root"] = np.array([0, 0, jump_root(t)])
+        p.hop = jump_hop(t)
         sq = 0.0
         if T_LAND <= t < T_SET + 0.08:
             sq = math.sin(math.pi * min(1.0, (t - T_LAND) / (T_SET + 0.08 - T_LAND)))
@@ -697,7 +696,7 @@ def make_clips(rig: Rig):
         p.scale["root"] = (1 + 0.06 * sq, 1 - 0.07 * sq, 1 + 0.06 * sq)   # root local Y = up
         tail_wag(t, p, rate=1.5, amp=10)
     clips.append(Clip("Jump", 1.7, [(0, stand), (T_SQ, j_sq), (0.70, j_up), (T_LAND + 0.12, j_land), (1.7, stand)],
-                      jump_ov, grounded=False, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
+                      jump_ov, meta=dict(priority=3, lookAt=0.3, interruptible=False)))
 
     # ---- Dance (one-shot, 6 s): groove side to side on the beat with alternating paws raised,
     # hop + full turn with the arms out, cheer with both paws up shaking, little bow

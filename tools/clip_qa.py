@@ -33,6 +33,10 @@ PAIRS = [
     ("Tail", "Leg_L", 0.010, None),
     ("Tail", "Leg_R", 0.010, None),
     ("Leg_L", "Leg_R", 0.008, None),
+    # feet vs the belly / leg columns (sitting, crouching); the ankle stub that sits inside the leg
+    # column by design is skipped: only foot vertices outside the body at rest are tested
+    ("Leg_L", "Body", 0.010, "rest"),
+    ("Leg_R", "Body", 0.010, "rest"),
 ]
 
 
@@ -54,6 +58,8 @@ def main():
     names = {n for pr in PAIRS for n in pr[:2]}
     skins = {n: Skin(rig, [parts[n]]) for n in names}
     rest_N = {n: np.asarray(parts[n].normals) for n in names}
+    from fox_build import shapes as SH
+    rest_out = {n: SH.body_sdf(np.asarray(parts[n].verts)) > 0.004 for n in ("Leg_L", "Leg_R")}
     rows = []; fail = False
     for clip in CL.make_clips(rig):
         n = int(round(clip.duration * CL.FPS))
@@ -71,7 +77,9 @@ def main():
             trees = {}
             for mover, obs, allow, ign in PAIRS:
                 mv = V[mover]
-                if ign:
+                if ign == "rest":
+                    mv = mv[rest_out[mover]]
+                elif ign:
                     mv = mv[np.linalg.norm(mv - Hw[ign[0]], axis=1) > ign[1]]
                 if not len(mv):
                     continue
