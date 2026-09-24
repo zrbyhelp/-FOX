@@ -659,9 +659,9 @@ def make_clips(rig: Rig):
     squat = stand.copy(); squat.set("hips", x=10).add("spine", x=6)
     for s in ("L", "R"):
         squat.set(f"thigh_{s}", x=-40); squat.set(f"shin_{s}", x=45); squat.set(f"foot_{s}", x=-5)
-    clips.append(Clip("SitDown", 1.1, [(0, stand), (0.45, squat), (0.85, think), (1.1, think)],
+    clips.append(Clip("SitDown", 1.1, [(0, stand), (0.4, squat), (0.92, think), (1.1, think)],
                       lambda t, p: breathe(t, p, 0.5, 0.3), meta=dict(priority=3, interruptible=False)))
-    clips.append(Clip("StandUp", 1.0, [(0, think), (0.45, squat), (0.88, stand), (1.0, stand)],
+    clips.append(Clip("StandUp", 1.0, [(0, think), (0.5, squat), (0.9, stand), (1.0, stand)],
                       lambda t, p: breathe(t, p, 0.5, 0.3), meta=dict(priority=3, interruptible=False)))
 
     # Jump: grounded crouches, the airborne arc rides on top as a hop
@@ -751,7 +751,7 @@ def make_clips(rig: Rig):
         p.add("ear_L", x=-10 * e * abs(sway)); p.add("ear_R", x=-10 * e * abs(sway))
         breathe(t, p, rate=0.5, amt=0.4)
     clips.append(Clip("Dance", 6.0, [(0, stand), (0.25, d_ready), (0.7, g_l), (1.3, g_r), (1.9, g_l), (2.5, g_r),
-                                     (2.85, d_out), (3.75, d_out), (4.2, d_cheer), (5.1, d_cheer), (5.5, d_bow),
+                                     (2.85, d_out), (3.75, d_out), (4.3, d_cheer), (5.05, d_cheer), (5.6, d_bow),
                                      (6.0, stand)],
                       dance_ov, meta=dict(priority=2, lookAt=0.2, refTime=1.3)))
 
