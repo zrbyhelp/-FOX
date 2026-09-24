@@ -391,7 +391,9 @@ class ArmSolver:
             # the wrist does not twist either (linear-blend skinning pinches the forearm): turning
             # the palm comes from rolling the whole arm at the shoulder, which is rigid
             e += 30.0 * (x[6:9] @ paw_dir) ** 2
-            e += 0.3 * np.sum(x[6:9] ** 2) + 0.05 * np.sum(x[0:3] ** 2)
+            # prefer the least rotation from the bind pose (no gratuitous roll of the whole arm:
+            # consecutive key poses then stay close and the arm never flips over between them)
+            e += 0.3 * np.sum(x[6:9] ** 2) + 0.4 * np.sum(x[0:3] ** 2)
             return e
 
         # start from analytic IK (wrist ~ target minus half a paw along the aim)

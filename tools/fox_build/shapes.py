@@ -155,8 +155,8 @@ def _arm_pts(side="L"):
 
 ARM_FLAT = 0.80        # arm / paw thickness : width (flattened, not a round tube)
 ARM_WIDEN = 1.12       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
-PAW_GROOVE_HW = 0.0030     # finger groove half-width
-PAW_GROOVE_DEPTH = 0.0045  # finger groove depth (fades in toward the tip)
+PAW_GROOVE_HW = 0.0045     # finger groove half-width (soft, wide creases like the toes)
+PAW_GROOVE_DEPTH = 0.0042  # finger groove depth (fades in toward the tip)
 
 
 def arm_sdf(p, side="L"):
@@ -178,7 +178,7 @@ def arm_sdf(p, side="L"):
     depth = PAW_GROOVE_DEPTH * S.smoothstep(pc, pc + 0.5 * pr, q[:, 1]) * S.smoothstep(-0.55 * pr, -0.15 * pr, q[:, 2])
     for gx in (-0.34 * pr, 0.34 * pr):
         g = np.maximum(np.abs(q[:, 0] - gx) - PAW_GROOVE_HW, -(d + depth))
-        d = S.ssub(d, g, 0.004)
+        d = S.ssub(d, g, 0.006)
     d = d * ARM_FLAT
     return S.smin(d, S.sphere(p, sh, ar * 1.05), 0.02)  # rounded root at the shoulder pivot
 

@@ -180,7 +180,7 @@ class Lib:
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
             # tips down and in, orange ends underneath (ref 1)
-            self.arm(p, s, (sx * 0.050, -0.215, 0.300), aim=(sx * -0.45, -0.45, -0.75), **kw)
+            self.arm(p, s, (sx * 0.056, -0.215, 0.300), aim=(sx * -0.45, -0.45, -0.75), **kw)
         return p
 
     def heart(self, p=None):
@@ -715,7 +715,8 @@ def make_clips(rig: Rig):
     g_r = dance_arms(dz.copy(), "R")
     d_out = dz.copy()
     for s, sx in (("L", 1), ("R", -1)):
-        L.arm(d_out, s, (sx * 0.300, -0.040, 0.340), aim=(sx * 1.0, -0.10, 0.25))
+        # palms down: raising the hanging arms sideways, without rolling them over
+        L.arm(d_out, s, (sx * 0.300, -0.040, 0.340), aim=(sx * 1.0, -0.10, 0.25), palm=(0.0, -0.1, -1.0))
     d_cheer = dz.copy()
     for s, sx in (("L", 1), ("R", -1)):
         L.arm(d_cheer, s, (sx * 0.310, -0.100, 0.460), aim=(sx * 0.50, -0.20, 1.0), head_margin=0.02)
@@ -748,7 +749,7 @@ def make_clips(rig: Rig):
         tail_wag(t, p, rate=1 / BEAT, amp=24 * e)
         p.add("ear_L", x=-10 * e * abs(sway)); p.add("ear_R", x=-10 * e * abs(sway))
         breathe(t, p, rate=0.5, amt=0.4)
-    clips.append(Clip("Dance", 6.0, [(0, stand), (0.35, d_ready), (0.7, g_l), (1.3, g_r), (1.9, g_l), (2.5, g_r),
+    clips.append(Clip("Dance", 6.0, [(0, stand), (0.25, d_ready), (0.7, g_l), (1.3, g_r), (1.9, g_l), (2.5, g_r),
                                      (2.85, d_out), (3.75, d_out), (4.2, d_cheer), (5.1, d_cheer), (5.5, d_bow),
                                      (6.0, stand)],
                       dance_ov, meta=dict(priority=2, lookAt=0.2, refTime=1.3)))
