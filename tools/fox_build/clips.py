@@ -459,6 +459,18 @@ def finalize_series(clip: Clip, poses, ground_skin: Skin | None, tail_skin: Skin
                 sgn = 1.0 if x.max() > 0 else -1.0
                 cols.append(sgn * _smooth(np.abs(x), 2.0, loop, envelope=True))
         sw = np.stack(cols, 1)
+        # repair: frames still touching after smoothing get a little more pitch (same side)
+        sgn = 1.0 if sw[:, 1].sum() >= 0 else -1.0
+        extra = np.zeros(len(poses))
+        for i, (p, v) in enumerate(zip(poses, sw)):
+            if not v.any() and flap.depth(p) <= flap.TOL:
+                continue
+            e = 0.0
+            while e < 20.0 and flap.depth(flap.apply(p.copy(), v[0], v[1] + sgn * e, v[2])) > flap.TOL:
+                e += 5.0
+            extra[i] = e
+        if extra.any():
+            sw[:, 1] += sgn * _smooth(extra, 1.5, loop, envelope=True)
         for p, (lat, a1, a2) in zip(poses, sw):
             flap.apply(p, *(v if abs(v) > 1e-3 else 0.0 for v in (lat, a1, a2)))
     return poses
