@@ -26,8 +26,8 @@ ORDER = ["Tail", "Leg_L", "Leg_R", "Body", "Arm_L", "Arm_R", "ScarfFlap", "Scarf
 
 
 def puppet_pose(rig) -> Pose:
-    """Front-facing rest pose = the 3D idle stance (arms relaxed at the sides, collision-free,
-    fingers folded into mittens); head, ears, tail at rest."""
+    """Front-facing rest pose = the 3D idle stance (arms relaxed at the sides, collision-free);
+    head, ears, tail at rest."""
     from .clips import Lib
     p = Lib(rig).stand()
     for b in ("ear_L", "ear_R"):

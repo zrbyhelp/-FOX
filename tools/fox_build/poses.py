@@ -121,6 +121,10 @@ class Pose:
         return vis
 
 
+def _ease(x):
+    return x * x * (3 - 2 * x)
+
+
 def blend(a: Pose, b: Pose, t: float) -> Pose:
     out = Pose()
     for n in set(a.rot) | set(b.rot):
@@ -130,10 +134,13 @@ def blend(a: Pose, b: Pose, t: float) -> Pose:
     for n in set(a.scale) | set(b.scale):
         sa = np.asarray(a.scale.get(n, (1, 1, 1)), float); sb = np.asarray(b.scale.get(n, (1, 1, 1)), float)
         out.scale[n] = tuple(sa * (1 - t) + sb * t)
-    # expressions: numeric visibilities blended, stored as explicit scales
+    # expressions: numeric visibilities, stored as explicit scales. Sequential, not a cross-morph:
+    # the old feature closes first (like a blink), then the new one opens - calmer to read
     va = a.expr_scales() if not hasattr(a, "_vis") else a._vis
     vb = b.expr_scales() if not hasattr(b, "_vis") else b._vis
-    out._vis = {k: va[k] * (1 - t) + vb[k] * t for k in va}
+    t_out = _ease(min(1.0, t / 0.6))
+    t_in = _ease(max(0.0, (t - 0.4) / 0.6))
+    out._vis = {k: va[k] + (vb[k] - va[k]) * (t_out if vb[k] < va[k] else t_in) for k in va}
     out.expr = (a if t < 0.5 else b).expr.copy()
     return out
 
@@ -325,9 +332,6 @@ class ArmSolver:
             V = np.asarray(part.verts)[::stride]
             names = [f"upperArm_{s}", f"forearm_{s}", f"paw_{s}"]
             W = np.stack([np.asarray(part.weights.get(n, np.zeros(len(part.verts))))[::stride] for n in names], 1)
-            for extra in (f"fingers_{s}", f"thumb_{s}"):      # fingers ride on the paw here
-                if extra in part.weights:
-                    W[:, 2] += np.asarray(part.weights[extra])[::stride]
             W /= np.maximum(W.sum(1, keepdims=True), 1e-9)
             self.samples[s] = (V, W)
 

@@ -72,10 +72,10 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.170, 0.012, 0.790),
-    "ear_tip": (0.308, 0.036, 0.930),
-    "ear_base_width": 0.262,
-    "ear_thickness": 0.088,
+    "ear_base": (0.165, 0.014, 0.800),
+    "ear_tip": (0.250, 0.036, 1.000),       # ~21 deg out from vertical, like the art
+    "ear_base_width": 0.200,                # tall, fairly narrow pointed ears (w/h ~0.85)
+    "ear_thickness": 0.072,
     # face anchors (x, z); y is projected onto the head surface at build time
     "eye_xz": (0.119, 0.590),
     "eye_size": (0.067, 0.080),               # width, height of the open eye
@@ -94,8 +94,8 @@ P = {
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
     "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.058,
-    "paw_radius": 0.055,
+    "arm_radius": 0.063,
+    "paw_radius": 0.056,
     "leg_radius": 0.066,
     "foot_size": (0.122, 0.132, 0.084),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
@@ -124,7 +124,7 @@ TAIL_SPLINE = [
 _A = math.radians(40.0)
 _ARM_DIR = (math.sin(_A), 0.0, -math.cos(_A))
 SHOULDER = (0.118, -0.058, 0.346)      # upperArm pivot (fox's left), front-side of the chest
-ARM_LEN = (0.096, 0.088, 0.058)        # upperArm, forearm, paw (~1/4 of the height, like the art)
+ARM_LEN = (0.084, 0.070, 0.052)        # upperArm, forearm, paw: short, thick stubs like the art
 
 
 def _along(p, d, length):
@@ -139,8 +139,8 @@ def _tail_points(n_bones: int = 6):
 
 
 def paw_frame(side="L"):
-    """Rest-pose paw frame (bind pose). x = across the paw toward the thumb (medial),
-    y = along the arm, z = back of the hand (front of the fox at rest), palm = -z.
+    """Rest-pose paw frame (bind pose). x = across the paw (medial), y = along the arm,
+    z = back of the hand (front of the fox at rest), palm = -z.
     The right paw's frame is the exact mirror (x -> -x) of the left one."""
     if side == "R":
         m = np.array([-1.0, 1.0, 1.0])
@@ -151,15 +151,7 @@ def paw_frame(side="L"):
     pc = wr + ax * 0.030
     x = np.cross(ax, (0.0, -1.0, 0.0)); x /= np.linalg.norm(x)
     z = np.cross(x, ax)
-    pr = P["paw_radius"]
-    tdir = 0.62 * x + 0.78 * ax
-    tbase = pc + x * pr * 0.72 + ax * pr * 0.05 - z * pr * 0.15
-    return {
-        "centre": pc, "x": x, "y": ax, "z": z,
-        "knuckle": pc + ax * pr * 0.45, "finger_tip": pc + ax * pr * 1.35,
-        "thumb_base": tbase, "thumb_tip": tbase + tdir * 0.030,
-        "finger_offsets": (-0.0195, 0.0, 0.0195), "finger_r": 0.0135, "thumb_r": 0.0135,
-    }
+    return {"centre": pc, "x": x, "y": ax, "z": z}
 
 
 def bone_table() -> dict:
@@ -199,10 +191,6 @@ def bone_table() -> dict:
         b[f"upperArm_{s}"] = (f"shoulder_{s}", up, el)
         b[f"forearm_{s}"] = (f"upperArm_{s}", el, wr)
         b[f"paw_{s}"] = (f"forearm_{s}", wr, tip)
-        # fingers (three nubs driven together) and thumb, from the paw frame
-        pf = paw_frame(s)
-        b[f"fingers_{s}"] = (f"paw_{s}", tuple(pf["knuckle"]), tuple(pf["finger_tip"]))
-        b[f"thumb_{s}"] = (f"paw_{s}", tuple(pf["thumb_base"]), tuple(pf["thumb_tip"]))
     b["scarf"] = ("chest", (0, 0.0, 0.405), (0, 0.0, 0.445))
     b["scarfFlap_1"] = ("scarf", (0.075, -0.125, 0.385), (0.083, -0.148, 0.31))
     b["scarfFlap_2"] = ("scarfFlap_1", (0.083, -0.148, 0.31), (0.09, -0.155, 0.235))

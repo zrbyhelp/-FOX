@@ -70,18 +70,18 @@ def _ear_shape(q, inner=False):
     parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
     hw = P["ear_base_width"] / 2
     fz = 0.62                                     # cone flattening front-back
-    r_tip = 0.030
+    r_tip = 0.021                                 # fairly pointed tip
     if inner:
-        rim = 0.029
+        rim = 0.020                               # slim cream rim around a big orange scoop
         qi = q.copy()
-        qi[:, 2] = (q[:, 2] - 0.032) / fz
-        cav = S.round_cone(qi, (0, 0.030, 0), (0, EAR_LEN - 0.050, 0), hw - rim, r_tip * 0.5) * fz
+        qi[:, 2] = (q[:, 2] - 0.025) / fz
+        cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.042, 0), hw - rim, r_tip * 0.5) * fz
         return cav
     qo = q.copy()
     qo[:, 2] = q[:, 2] / fz
     cone = S.round_cone(qo, (0, EAR_Y0, 0), (0, EAR_LEN - r_tip * 0.6, 0), hw, r_tip) * fz
-    front = q[:, 2] - 0.014                       # open the front of the cone
-    return S.smax(cone, front, 0.020)             # rounded rim where the cut meets the cone
+    front = q[:, 2] - 0.011                       # open the front of the cone
+    return S.smax(cone, front, 0.016)             # rounded rim where the cut meets the cone
 
 
 def ear_local(p):
@@ -105,12 +105,6 @@ def head_core(p):
     return d
 
 
-def ear_nub(p):
-    q = S.mirror_x(p)
-    c = EAR_BASE + EAR_R @ np.array([-0.062, 0.035, 0.022])
-    return S.sphere(q, c, 0.0125)
-
-
 def ear_outer(p):
     return _ear_shape(ear_local(p))
 
@@ -121,8 +115,7 @@ def ear_inner(p):
 
 def head_sdf(p):
     d = S.smin(head_core(p), ear_outer(p), 0.035)
-    d = S.ssub(d, ear_inner(p), 0.012)
-    d = S.smin(d, ear_nub(p), 0.010)
+    d = S.ssub(d, ear_inner(p), 0.010)
     return d
 
 
@@ -153,29 +146,20 @@ def _arm_pts(side="L"):
 def arm_sdf(p, side="L"):
     sh, el, wr, tip = _arm_pts(side)
     ar = P["arm_radius"]; pr = P["paw_radius"]
-    # one smooth tapered tube shoulder -> wrist (no elbow lump; the bend comes from skinning)
-    d = S.round_cone(p, sh, wr, ar, ar * 0.84)
-    ax = (tip - wr) / np.linalg.norm(tip - wr)
-    pc = wr + ax * 0.030
-    # mitten paw: ellipsoid in a local frame (x lateral, y along axis, z front/back)
-    o, R = S.frame(pc, np.cross(ax, [0, -1, 0]), ax)
+    # one smooth, thick, slightly tapered stub shoulder -> wrist (the bend comes from skinning)
+    d = S.round_cone(p, sh, wr, ar, ar * 0.87)
+    f = C.paw_frame(side)
+    # mitten paw: a rounded bulb barely wider than the wrist (x across, y along, z back of hand)
+    o, R = S.frame(f["centre"], f["x"], f["y"])
     ql = S.to_local(p, o, R)
-    paw = S.ellipsoid(ql, (0, 0, 0), (pr * 1.0, pr * 1.0, pr * 0.84))     # palm, barely wider than the wrist
+    paw = S.ellipsoid(ql, (0, 0.002, 0), (pr * 1.0, pr * 1.04, pr * 0.86))
     d = S.smin(d, paw, 0.03)
     d = S.smin(d, S.sphere(p, sh, ar * 1.02), 0.02)  # ball root at the shoulder pivot
-    d = S.smin(d, paw_fingers_sdf(p, side), 0.006)   # finger nubs + thumb (bones: fingers_*, thumb_*)
-    return d
-
-
-def paw_fingers_sdf(p, side="L"):
-    """Three short finger nubs over the paw tip + a thumb on the medial side (rest pose)."""
-    f = C.paw_frame(side)
-    d = np.full(len(p), np.inf)
-    for off in f["finger_offsets"]:
-        a = f["knuckle"] + f["x"] * off - f["y"] * 0.004
-        b = f["finger_tip"] + f["x"] * off * 1.08
-        d = np.minimum(d, S.capsule(p, a, b, f["finger_r"]))
-    d = np.minimum(d, S.capsule(p, f["thumb_base"], f["thumb_tip"], f["thumb_r"]))
+    # two toe grooves over the tip on the back of the paw, like the feet
+    for gx in (-0.017, 0.017):
+        a = f["centre"] + f["x"] * gx + f["z"] * pr * 0.74 + f["y"] * pr * 0.10
+        b = f["centre"] + f["x"] * gx * 1.06 + f["y"] * pr * 0.95 + f["z"] * pr * 0.26
+        d = S.ssub(d, S.capsule(p, a, b, 0.0042), 0.006)
     return d
 
 

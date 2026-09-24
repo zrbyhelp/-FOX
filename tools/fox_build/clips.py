@@ -52,22 +52,6 @@ def paw_to(rig, pose, side, wrist, aim=None, pole=None, twist=0.0, space="chest"
     return pose
 
 
-def fingers(pose, side, curl=25.0, thumb=15.0):
-    """Curl the three finger nubs and the thumb toward the palm (degrees; 0 = straight)."""
-    from .anim import qaxis
-    x = np.asarray(C.paw_frame("L")["x"], float)
-    qf, qt = qaxis(x, -curl), qaxis(x, -thumb)
-    if side == "R":
-        qf, qt = qmirror(qf), qmirror(qt)
-    pose.rot[f"fingers_{side}"] = qf
-    pose.rot[f"thumb_{side}"] = qt
-    return pose
-
-
-def both_fingers(pose, curl=25.0, thumb=15.0):
-    return fingers(fingers(pose, "L", curl, thumb), "R", curl, thumb)
-
-
 def tail_curve(pose, x=0.0, z=0.0, falloff=1.0, start=1):
     for i in range(start, 7):
         k = falloff ** (i - start)
@@ -170,49 +154,49 @@ class Lib:
         p.set("ear_L", y=-4, mirror=True)
         for s, sx in (("L", 1), ("R", -1)):
             self.arm(p, s, (sx * 0.212, -0.092, 0.180), aim=(sx * 0.20, -0.30, -1.0))
-        return both_fingers(p, 85, 60)   # relaxed: fingers folded into a mitten
+        return p
 
     def clasp(self, p=None, **kw):
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
             self.arm(p, s, (sx * 0.041, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0), **kw)
-        return both_fingers(p, 85, 60)
+        return p
 
     def heart(self, p=None):
         """Ref 7: paws form a heart at the chest (tips meet low in the middle)."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            # paws meet at the chest, fingertips touching (the web adds a pink heart that pops out)
+            # paws meet at the chest, tips touching (the web adds a pink heart that pops out)
             self.arm(p, s, (sx * 0.050, -0.240, 0.300), aim=(sx * -0.2, -0.35, 0.9), palm=(-sx * 0.9, 0.0, 0.2))
-        return both_fingers(p, 85, 20)
+        return p
 
     def paw_chest(self, p, side, low=False):
         sx = 1 if side == "L" else -1
         if low:   # resting on the belly
-            return fingers(self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2)), side, 85, 60)
-        return fingers(self.arm(p, side, (sx * 0.055, -0.218, 0.298), aim=(sx * -0.30, -0.30, 1.0)), side, 85, 60)
+            return self.arm(p, side, (sx * 0.105, -0.215, 0.228), aim=(sx * -0.55, -0.45, 0.2))
+        return self.arm(p, side, (sx * 0.055, -0.218, 0.298), aim=(sx * -0.30, -0.30, 1.0))
 
     def wave_up(self, p, side="L", swing=0.0):
         sx = 1 if side == "L" else -1
         self.arm(p, side, (sx * 0.312, -0.118, 0.462), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
-        return fingers(p, side, 4, 30)       # thumb tucked forward, clear of the cheek
+        return p
 
     def present(self, p, side="R"):
         sx = 1 if side == "L" else -1
         self.arm(p, side, (sx * 0.285, -0.150, 0.330), aim=(sx * 1.0, -0.50, 0.20), palm=(0.0, -0.2, 1.0))
-        return fingers(p, side, 2, 0)
+        return p
 
     def reach(self, p, side="R"):
         sx = 1 if side == "L" else -1
         self.arm(p, side, (sx * 0.262, -0.205, 0.440), aim=(sx * 0.60, -0.55, 0.8))
-        return fingers(p, side, 12, 8)
+        return p
 
     def shrug(self, p):
         p.set("shoulder_L", y=-9, mirror=True)
         for s, sx in (("L", 1), ("R", -1)):
             self.arm(p, s, (sx * 0.280, -0.140, 0.300), aim=(sx * 1.0, -0.40, 0.30), palm=(0.0, -0.2, 1.0))
-        return both_fingers(p, 6, 4)
+        return p
 
     def sit(self, p=None, lean=0.0):
         """Sitting on the floor, legs forward (soles to the camera), tail curled to the left."""
@@ -627,7 +611,6 @@ def make_clips(rig: Rig):
     think.add("neck", y=-4).add("head", y=-11, z=-8, x=3)
     L.paw_chest(think, "L", low=True)
     L.arm(think, "R", (-0.075, -0.232, 0.350), aim=(0.35, -0.35, 1.0), head_margin=-0.004)
-    fingers(think, "R", 85, 60)
     think.expression(brows="left")
     def think_ov(t, p):
         ph = 2 * math.pi * t / 4.0
@@ -641,7 +624,6 @@ def make_clips(rig: Rig):
     doze.add("neck", x=6, y=-4).add("head", x=10, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
     L.arm(doze, "R", (-0.088, -0.232, 0.346), aim=(0.30, -0.30, 1.0), head_margin=-0.004)
-    fingers(doze, "R", 85, 60)
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):
@@ -722,58 +704,6 @@ def make_clips(rig: Rig):
     clips.append(Clip("LookBack", 2.4, [(0, stand), (0.45, lb), (1.9, lb), (2.4, stand)], lb_ov,
                       meta=dict(priority=2, lookAt=0.0)))
 
-    # ---- Enter: hop in from the viewer's right (fox's left, +X), turn to the front, wave
-    wv = w1
-    HOPS, T_IN, X0 = 3, 1.25, 0.95
-
-    def hopping(t, p, x_from, x_to, t0, t1, yaw, ease="out"):
-        """Root travel with parabolic hops between t0 and t1; body faces the travel direction.
-        ease='out' decelerates into the arrival, 'in' accelerates away; hops ramp in/out."""
-        if t0 <= t <= t1:
-            u = (t - t0) / (t1 - t0)
-            k = (u * HOPS) % 1.0
-            ramp = min(1.0, u / 0.12, (1 - u) / 0.12)
-            # parabola ^1.35: same arc, but take-off / landing velocity eases over a few frames
-            # (a bare parabola's cusp jolts the legs and the web's tail chain)
-            air = (4 * k * (1 - k)) ** 1.35 * (0.35 + 0.65 * ramp)
-            e = 1 - (1 - u) ** 2 if ease == "out" else u * u
-            x = x_from + (x_to - x_from) * e
-            p.loc["root"] = np.array([x, 0.0, 0.0])
-            p.hop = 0.075 * air
-            p.add("root", z=yaw)
-            for s in ("L", "R"):
-                p.add(f"thigh_{s}", x=-22 * air); p.add(f"shin_{s}", x=26 * air)
-                p.add(f"upperArm_{s}", y=(-18 if s == "L" else 18) * air)
-            p.add("spine", x=6 * (1 - air) - 4 * air)
-            ears = -16 * air
-            p.add("ear_L", x=ears); p.add("ear_R", x=ears)
-            for i in range(2, 7):   # the tail trails behind the travel direction
-                p.add(f"tail_{i}", x=10 * air, z=-np.sign(x_to - x_from) * 6 * (0.5 + 0.1 * i))
-            return True
-        return False
-
-    def enter_ov(t, p):
-        if not hopping(t, p, X0, 0.0, 0.0, T_IN, -38.0):
-            turn = 1 - smoother((t - T_IN) / 0.3)
-            p.add("root", z=-38.0 * turn)
-            env = smoother((t - 1.75) / 0.25) * (1 - smoother((t - 2.4) / 0.25))
-            p.add("forearm_L", y=-14 * env * (0.5 * math.sin(2 * math.pi * 2.2 * (t - 1.75)) - 0.5))
-            tail_wag(t, p, rate=2.0, amp=22 * env)
-        breathe(t, p, 0.5, 0.4)
-    clips.append(Clip("Enter", 3.0, [(0, stand), (T_IN + 0.1, stand), (1.8, wv), (2.4, wv), (3.0, stand)],
-                      enter_ov, meta=dict(priority=4, interruptible=False, lookAt=0.3)))
-
-    # ---- Exit: wave goodbye, turn toward the viewer's right, hop away out of frame
-    def exit_ov(t, p):
-        env = smoother((t - 0.45) / 0.25) * (1 - smoother((t - 1.1) / 0.2))
-        p.add("forearm_L", y=-14 * env * (0.5 * math.sin(2 * math.pi * 2.2 * (t - 0.45)) - 0.5))
-        if not hopping(t, p, 0.0, X0, 1.55, 2.9, 40.0, ease="in"):
-            p.add("root", z=40.0 * smoother((t - 1.2) / 0.35))
-        tail_wag(t, p, rate=2.0, amp=16 * env)
-        breathe(t, p, 0.5, 0.4)
-    clips.append(Clip("Exit", 2.9, [(0, stand), (0.45, wv), (1.1, wv), (1.55, stand), (2.9, stand)],
-                      exit_ov, meta=dict(priority=4, interruptible=False, lookAt=0.0)))
-
     # ---- Type (loop): paws tap a floating keyboard (spec.keyboard) at chest height
     # one solved pose over the keys; the taps are small shoulder / elbow / wrist offsets on top,
     # so the arms never re-solve (separately solved key poses jumped between solutions)
@@ -781,8 +711,8 @@ def make_clips(rig: Rig):
     tb.add("head", x=12).add("neck", x=4)
     tb.set("ear_L", x=6, y=-4); tb.set("ear_R", x=6, y=4)
     for s, sx in (("L", 1), ("R", -1)):
-        L.arm(tb, s, (sx * 0.078, -0.252, 0.288), aim=(-sx * 0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
-    both_fingers(tb, 40, 26)
+        # back rows of the (bigger) keyboard: spec.keyboard, top ~0.23 there, back edge y -0.20
+        L.arm(tb, s, (sx * 0.080, -0.236, 0.272), aim=(-sx * 0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
     def typing_pose(sl, dl, sr, dr):
         """s*: sideways step along the keys (deg, + = outward); d*: 1 = key pressed, 0 = lifted."""
         p = tb.copy()

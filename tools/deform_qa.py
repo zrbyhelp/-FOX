@@ -20,7 +20,7 @@ from fox_build.poses import Rig, Skin  # noqa: E402
 # triangles count as defects.
 AREA_MIN, AREA_MAX = 0.10, 3.0
 BAD_FRACTION = 0.006                 # allowed fraction of out-of-range triangles per part
-BAD_FRACTION_ARM = 0.013             # folded fingers compress at the knuckle, inside the mitten
+BAD_FRACTION_ARM = 0.009             # elbow crease of the short stubby arms
 FLOOR = -0.012                       # allowed penetration (m)
 FACE = {"Eye_L", "Eye_R", "EyeHappy_L", "EyeHappy_R", "EyeSleep_L", "EyeSleep_R", "Brow_L",
         "Brow_R", "MouthSmile", "MouthOpen"}   # scaled by expression bones on purpose

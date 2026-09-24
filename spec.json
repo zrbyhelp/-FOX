@@ -129,16 +129,6 @@
       "kind": "deform"
     },
     {
-      "name": "fingers_L",
-      "parent": "paw_L",
-      "kind": "deform"
-    },
-    {
-      "name": "thumb_L",
-      "parent": "paw_L",
-      "kind": "deform"
-    },
-    {
       "name": "shoulder_R",
       "parent": "chest",
       "kind": "deform"
@@ -156,16 +146,6 @@
     {
       "name": "paw_R",
       "parent": "forearm_R",
-      "kind": "deform"
-    },
-    {
-      "name": "fingers_R",
-      "parent": "paw_R",
-      "kind": "deform"
-    },
-    {
-      "name": "thumb_R",
-      "parent": "paw_R",
       "kind": "deform"
     },
     {
@@ -372,16 +352,6 @@
     },
     {
       "name": "LookBack",
-      "loop": false,
-      "ref": null
-    },
-    {
-      "name": "Enter",
-      "loop": false,
-      "ref": null
-    },
-    {
-      "name": "Exit",
       "loop": false,
       "ref": null
     },
@@ -616,15 +586,15 @@
     "gltf": {
       "position": [
         0.0,
-        0.235,
-        0.255
+        0.222,
+        0.29
       ],
       "size": [
-        0.34,
-        0.028,
-        0.13
+        0.48,
+        0.034,
+        0.18
       ],
-      "tiltDeg": -10
+      "tiltDeg": -12
     }
   }
 }

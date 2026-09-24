@@ -19,7 +19,7 @@ JERK_DEG = 6.0        # change of angular velocity between consecutive frames (d
 JERK_TAIL = 10.0      # fast happy tail wags are intended
 SPEED_DEG = 25.0      # angular speed per frame considered a pop
 LOC_JERK = 0.006      # translation velocity change per frame (m)
-HOP_CLIPS = {"Jump", "Enter", "Exit"}   # landings are real impacts
+HOP_CLIPS = {"Jump"}   # landings are real impacts
 LOC_JERK_HOP = 0.025
 LEG_JERK_HOP = 9.0
 
