@@ -37,7 +37,7 @@ export const PARAMS = {
   ParamArmLA: [-180, 180, 0], // upper arm (shoulder)
   ParamArmLB: [-180, 180, 0], // forearm (elbow)
   ParamArmLC: [-90, 90, 0], // paw (wrist)
-  ParamArmLOrder: [0, 2, 0], // forearm draw order: 0 behind the scarf, 1 above scarf/keyboard, 2 above the face
+  ParamArmLOrder: [0, 2, 0], // arm draw order: 0 rest, 1 over the flap / keyboard (under the scarf), 2 over the face
   ParamArmRA: [-180, 180, 0],
   ParamArmRB: [-180, 180, 0],
   ParamArmRC: [-90, 90, 0],
@@ -80,6 +80,7 @@ export function clampParams(p) {
 
 const HEAD_TURN = 0.05; // model units the face centre shifts at |AngleX| = 30
 const HEAD_NOD = 0.036; // ... at |AngleY| = 30
+const ARM_SPLIT = 0.93; // front part of an arm = within this x upper-arm length of the elbow, or beyond it
 const HEAD_GLOBAL = 0.16; // share of the shift that moves the whole head (silhouette included)
 const FACE_DEPTH = {
   Nose: 1.4, MouthSmile: 1.22, MouthOpen: 1.22,
@@ -113,27 +114,39 @@ class Chain {
     for (let j = 1; j < this.n; j++) this.h.push(Math.min(blend, 0.45 * Math.min(this.len[j - 1], this.len[j])));
     this.anchor = anchor;
     this.M = Array.from({ length: this.n + 1 }, () => aff());
+    this.theta = new Float64Array(this.n + 1); // cumulative angle of each M entry
     this.jp = this.J.map((p) => [p[0], p[1]]); // posed joints
     this._r = aff();
   }
 
-  /** Arc-length coordinate of a rest point (projection onto the nearest segment). */
+  /**
+   * Arc-length coordinate of a rest point: projections onto every segment, blended by a
+   * soft-min of their distances so the coordinate is continuous in the inner corner of bends.
+   */
   param(x, y) {
-    let best = Infinity;
-    let s = 0;
+    const SOFT = 0.012;
+    let dmin = Infinity;
+    const ds = [];
+    const ss = [];
     for (let i = 0; i < this.n; i++) {
       const [jx, jy] = this.J[i];
       const [dx, dy] = this.dir[i];
       const t = (x - jx) * dx + (y - jy) * dy;
       const tc = clamp(t, 0, this.len[i]);
       const d = Math.hypot(x - jx - dx * tc, y - jy - dy * tc);
-      if (d < best - 1e-9) {
-        best = d;
-        const tt = (i === 0 && t < 0) || (i === this.n - 1 && t > this.len[i]) ? t : tc;
-        s = this.S[i] + tt;
-      }
+      const tt = (i === 0 && t < 0) || (i === this.n - 1 && t > this.len[i]) ? t : tc;
+      ds.push(d);
+      ss.push(this.S[i] + tt);
+      if (d < dmin) dmin = d;
     }
-    return s;
+    let sw = 0;
+    let s = 0;
+    for (let i = 0; i < this.n; i++) {
+      const w = Math.exp(-(ds[i] - dmin) / SOFT);
+      sw += w;
+      s += ss[i] * w;
+    }
+    return s / sw;
   }
 
   /** Bone pair (0 = anchor, k = bone k-1) and blend weight for arc length s. */
@@ -161,13 +174,15 @@ class Chain {
     const a = new Uint8Array(count);
     const b = new Uint8Array(count);
     const t = new Float32Array(count);
+    const s = new Float32Array(count);
     for (let i = 0; i < count; i++) {
-      const [ia, ib, w] = this.weightsAt(this.param(rest[i * 2], rest[i * 2 + 1]));
+      s[i] = this.param(rest[i * 2], rest[i * 2 + 1]);
+      const [ia, ib, w] = this.weightsAt(s[i]);
       a[i] = ia;
       b[i] = ib;
       t[i] = w;
     }
-    return { a, b, t };
+    return { a, b, t, s };
   }
 
   /** Relative bone rotations (radians, CCW) -> bone matrices. */
@@ -175,8 +190,10 @@ class Chain {
     const M = this.M;
     aff(M[0]);
     let cum = 0;
+    this.theta[0] = 0;
     for (let k = 0; k < this.n; k++) {
       cum += angles[k] || 0;
+      this.theta[k + 1] = cum;
       const [jx, jy] = this.J[k];
       let px = jx;
       let py = jy;
@@ -233,13 +250,20 @@ export class Rig {
       const layer = L[`Arm_${s}`];
       if (ch && layer) {
         const bind = (this.binds[layer.name] = ch.bind(layer.rest));
-        const lower = new Float32Array(bind.t.length);
-        for (let i = 0; i < lower.length; i++) {
-          const wa = bind.a[i] >= 2 ? 1 - bind.t[i] : 0;
-          const wb = bind.b[i] >= 2 ? bind.t[i] : 0;
-          lower[i] = wa + wb;
+        // draw-order split: the shoulder cap stays tucked under the scarf, the rest of the arm
+        // can be brought forward. The boundary is an arc centred on the elbow, so wherever it
+        // shows it reads as the rounded top of the arm rather than a straight cut.
+        const [ex, ey] = ch.J[1];
+        const R = ch.len[0] * ARM_SPLIT;
+        const front = new Float32Array(bind.s.length);
+        const rest = layer.rest;
+        for (let i = 0; i < front.length; i++) {
+          const d = Math.hypot(rest[i * 2] - ex, rest[i * 2 + 1] - ey);
+          const inCircle = clamp((R - d) / 0.01 + 0.5, 0, 1);
+          const past = clamp((bind.s[i] - ch.S[1]) / 0.01 + 0.5, 0, 1);
+          front[i] = Math.max(inCircle, past);
         }
-        puppet.splitLayer(layer.name, lower);
+        puppet.splitLayer(layer.name, front);
       }
       const ear = mk(`ear_${s}`, C[`ear_${s}`], { anchor: [-0.06, 0.0], blend: 0.045 });
       if (ear && L[`Ear_${s}`]) this.binds[`Ear_${s}`] = ear.bind(L[`Ear_${s}`].rest);
@@ -436,23 +460,43 @@ export class Rig {
   deform_Leg_L(L, p) { return this.legs(L, p, 1); }
   deform_Leg_R(L, p) { return this.legs(L, p, -1); }
 
-  skin(L, chain, bind, post) {
+  /**
+   * Skin with rotation interpolation: across a joint the vertex rotates about that joint by the
+   * blended angle (radius preserved), so bends stay round instead of collapsing like LBS.
+   * `sitField` lowers the result by the sit field (tail: its bottom stays on the floor).
+   */
+  skin(L, chain, bind, post, sitField = false) {
     const M = chain.M;
+    const th = chain.theta;
+    const J = chain.J;
+    const jp = chain.jp;
     const r = L.rest;
     const o = L.pos;
     const { a, b, t } = bind;
+    const sitY = sitField ? this.sitY : 0;
     for (let i = 0, n = r.length / 2; i < n; i++) {
       const x = r[i * 2];
       const y = r[i * 2 + 1];
-      const ma = M[a[i]];
-      let px = ma[0] * x + ma[2] * y + ma[4];
-      let py = ma[1] * x + ma[3] * y + ma[5];
+      const ia = a[i];
       const w = t[i];
+      let px;
+      let py;
       if (w > 0) {
-        const mb = M[b[i]];
-        px += (mb[0] * x + mb[2] * y + mb[4] - px) * w;
-        py += (mb[1] * x + mb[3] * y + mb[5] - py) * w;
+        const ang = th[ia] + (th[b[i]] - th[ia]) * w;
+        const c = Math.cos(ang);
+        const sn = Math.sin(ang);
+        const jx = J[ia][0];
+        const jy = J[ia][1];
+        const qx = ia === 0 ? jx : jp[ia][0];
+        const qy = ia === 0 ? jy : jp[ia][1];
+        px = qx + c * (x - jx) - sn * (y - jy);
+        py = qy + sn * (x - jx) + c * (y - jy);
+      } else {
+        const ma = M[ia];
+        px = ma[0] * x + ma[2] * y + ma[4];
+        py = ma[1] * x + ma[3] * y + ma[5];
       }
+      if (sitY) py += sitY * (smoothstep(0.0, 0.26, y) - 1);
       o[i * 3] = post[0] * px + post[2] * py + post[4];
       o[i * 3 + 1] = post[1] * px + post[3] * py + post[5];
     }
@@ -469,9 +513,9 @@ export class Rig {
       ang[i] = abs - prev;
       prev = abs;
     }
-    if (!this.changed(L, [...this.T.body, ...ang.subarray(0, ch.n)])) return false;
+    if (!this.changed(L, [...this.T.body, ...ang.subarray(0, ch.n), this.sitY])) return false;
     ch.pose(ang);
-    this.skin(L, ch, bind, this.T.body);
+    this.skin(L, ch, bind, this.T.body, true);
     return true;
   }
 
@@ -528,15 +572,15 @@ export class Rig {
     const bind = this.binds[L.name];
     const side = s === 'L' ? 1 : -1;
     const T = this.T;
-    // counter-parallax: the ears sit behind the face, so they drift against the turn; the far
-    // ear narrows a little
+    // the ears ride on the top of the head (which barely moves in the turn field), drifting a
+    // touch against the turn; the far ear narrows a little
     const ax = p.ParamAngleX / 30;
     const post = T.tmp2;
     const piv = this.pv(`ear_${s}`, [side * 0.17, 0.79]);
     const far = Math.max(0, -side * ax);
     affScale(post, 1 - 0.16 * far + 0.04 * Math.max(0, side * ax), 1 - 0.03 * far, piv[0], piv[1]);
-    post[4] += -this.shiftX * 0.45;
-    post[5] += -this.shiftY * 0.35;
+    post[4] += this.shiftX * (HEAD_GLOBAL - 0.05);
+    post[5] += this.shiftY * (HEAD_GLOBAL - 0.08);
     affMul(post, T.head, post);
     if (!ch || !bind) {
       if (!this.changed(L, post)) return false;
@@ -670,7 +714,7 @@ export class Rig {
   updateOrders(p) {
     const pup = this.puppet;
     const B = pup.byName;
-    const front1 = (B.Scarf?.baseOrder ?? 170) + 5; // above scarf + keyboard (keyboard at +3)
+    const front1 = (B.ScarfFlap?.baseOrder ?? 160) + 5; // above the flap + keyboard (+3), under the scarf
     const front2 = (pup.layers[pup.layers.length - 1]?.baseOrder ?? 300) + 5; // above every face part
     for (const s of ['L', 'R']) {
       const L = B[`Arm_${s}`];

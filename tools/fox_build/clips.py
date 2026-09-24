@@ -176,7 +176,7 @@ class Lib:
         """Ref 1: paws together at the chest pointing up."""
         p = p or Pose()
         for s, sx in (("L", 1), ("R", -1)):
-            self.arm(p, s, (sx * 0.034, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0))
+            self.arm(p, s, (sx * 0.041, -0.222, 0.300), aim=(sx * -0.20, -0.25, 1.0))
         return both_fingers(p, 85, 60)
 
     def heart(self, p=None):
@@ -195,7 +195,7 @@ class Lib:
 
     def wave_up(self, p, side="L", swing=0.0):
         sx = 1 if side == "L" else -1
-        self.arm(p, side, (sx * 0.282, -0.110, 0.468), aim=(sx * (0.25 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
+        self.arm(p, side, (sx * 0.300, -0.118, 0.462), aim=(sx * (0.30 + swing), -0.25, 1.0), palm=(0.0, -1.0, 0.15))
         return fingers(p, side, 4, 5)
 
     def present(self, p, side="R"):
@@ -225,7 +225,7 @@ class Lib:
             p.set(f"thigh_{s}", x=-50, z=sx * 12)
             p.set(f"shin_{s}", x=-16)
             p.set(f"foot_{s}", x=-30)
-        p.set("tail_1", x=12, z=-4)                        # straight out of the butt first...
+        p.set("tail_1", x=18, z=-4)                        # straight out of the butt first...
         tail_curve(p, x=-5, z=-24, start=2, falloff=0.95)  # ...then curl round to the side
         return p
 
@@ -450,8 +450,8 @@ def make_clips(rig: Rig):
     def wave_ov(t, p):
         env = smoother((t - 0.45) / 0.3) * (1 - smoother((t - 2.15) / 0.3))
         sw = math.sin(2 * math.pi * 2.0 * (t - 0.45))
-        p.add("forearm_L", y=-14 * env * sw)
-        p.add("paw_L", y=-18 * env * math.sin(2 * math.pi * 2.0 * (t - 0.45) - 0.6))
+        p.add("forearm_L", y=-14 * env * (0.5 * sw - 0.5))
+        p.add("paw_L", y=-18 * env * (0.5 * math.sin(2 * math.pi * 2.0 * (t - 0.45) - 0.6) - 0.5))
         p.hop = 0.012 * env * abs(math.sin(math.pi * 2.0 * (t - 0.45)))
         breathe(t, p, rate=0.5, amt=0.5)
         tail_wag(t, p, rate=1.6, amp=18 * env)
@@ -553,7 +553,7 @@ def make_clips(rig: Rig):
         L.arm(j_sq, s, (sx * 0.215, -0.060, 0.190), aim=(sx * 0.3, 0.1, -1.0))
     j_up = stand.copy()
     for s, sx in (("L", 1), ("R", -1)):
-        L.arm(j_up, s, (sx * 0.275, -0.100, 0.460), aim=(sx * 0.4, -0.2, 1.0))
+        L.arm(j_up, s, (sx * 0.292, -0.110, 0.455), aim=(sx * 0.5, -0.2, 1.0))
         j_up.set(f"thigh_{s}", x=-25); j_up.set(f"shin_{s}", x=35); j_up.set(f"foot_{s}", x=10)
     j_up.expression(eyes="happy", mouth="open").add("head", x=-6)
     j_up.set("ear_L", x=-18, mirror=False); j_up.set("ear_R", x=-18)
@@ -643,7 +643,7 @@ def make_clips(rig: Rig):
             turn = 1 - smoother((t - T_IN) / 0.3)
             p.add("root", z=-38.0 * turn)
             env = smoother((t - 1.75) / 0.25) * (1 - smoother((t - 2.4) / 0.25))
-            p.add("forearm_L", y=-14 * env * math.sin(2 * math.pi * 2.2 * (t - 1.75)))
+            p.add("forearm_L", y=-14 * env * (0.5 * math.sin(2 * math.pi * 2.2 * (t - 1.75)) - 0.5))
             tail_wag(t, p, rate=2.0, amp=22 * env)
         breathe(t, p, 0.5, 0.4)
     clips.append(Clip("Enter", 3.0, [(0, stand), (T_IN + 0.1, stand), (1.8, wv), (2.4, wv), (3.0, stand)],
@@ -652,7 +652,7 @@ def make_clips(rig: Rig):
     # ---- Exit: wave goodbye, turn toward the viewer's right, hop away out of frame
     def exit_ov(t, p):
         env = smoother((t - 0.45) / 0.25) * (1 - smoother((t - 1.1) / 0.2))
-        p.add("forearm_L", y=-14 * env * math.sin(2 * math.pi * 2.2 * (t - 0.45)))
+        p.add("forearm_L", y=-14 * env * (0.5 * math.sin(2 * math.pi * 2.2 * (t - 0.45)) - 0.5))
         if not hopping(t, p, 0.0, X0, 1.55, 2.9, 40.0, ease="in"):
             p.add("root", z=40.0 * smoother((t - 1.2) / 0.35))
         tail_wag(t, p, rate=2.0, amp=16 * env)

@@ -70,6 +70,7 @@ await page.evaluate(({ expressionBones, LIMITS }) => {
   const n = names.length;
   const skip = names.map((nm) => expressionBones.includes(nm));
   const rootIdx = names.indexOf('root');
+  const tipIdx = names.indexOf('tail_6');
   const D = 180 / Math.PI;
 
   // quaternion helpers on flat arrays [x, y, z, w]
@@ -107,7 +108,7 @@ await page.evaluate(({ expressionBones, LIMITS }) => {
   const S = { mixer: mk(), final: mk() };
   const tmp = [0, 0, 0, 0];
   const rec = window.__motion = {
-    seg: null, t: 0, events: [], segs: {}, lastAction: null, sinceChange: 99, visPrev: true, hiddenRecent: false, rawStep: null, dropped: 0,
+    seg: null, t: 0, events: [], segs: {}, lastAction: null, sinceChange: 99, shownFor: 99, hiddenRecent: false, rawStep: null, dropped: 0,
   };
 
   function sample(s) {
@@ -151,7 +152,7 @@ await page.evaluate(({ expressionBones, LIMITS }) => {
   }
 
   function segStats(name) {
-    return rec.segs[name] ??= { steps: 0, mixer: { change: [0, ''], jump: [0, ''] }, final: { change: [0, ''], jump: [0, ''] }, counts: {} };
+    return rec.segs[name] ??= { steps: 0, mixer: { change: [0, ''], jump: [0, ''] }, final: { change: [0, ''], jump: [0, ''] }, counts: {}, tailDev: 0, tailDevSum: 0 };
   }
 
   function top(arr, k = 3, limit = 0) {
@@ -171,13 +172,22 @@ await page.evaluate(({ expressionBones, LIMITS }) => {
       rec.sinceChange = act === rec.lastAction ? rec.sinceChange + 1 : 0;
       rec.lastAction = act;
       const vis = app.fox.root.visible;
-      rec.hiddenRecent = !vis || !rec.visPrev; // hidden now, or just shown (pose snapped while hidden)
-      rec.visPrev = vis;
+      rec.shownFor = vis ? (rec.shownFor ?? 99) + 1 : 0;
+      rec.hiddenRecent = rec.shownFor <= 2; // hidden now, or just shown (pose snapped while hidden)
     }
     if (s.frames === 0) { roll(s); return; }
     const m = measure(s);
     const st = segStats(rec.seg);
-    if (phase === 'final') st.steps++;
+    if (phase === 'final') {
+      st.steps++;
+      if (tipIdx >= 0) { // how far the procedural layer moves the tail tip off the clip pose
+        const a = S.mixer.world, b = S.final.world, o = tipIdx * 4;
+        const dot = Math.min(1, Math.abs(a[o] * b[o] + a[o + 1] * b[o + 1] + a[o + 2] * b[o + 2] + a[o + 3] * b[o + 3]));
+        const dev = 2 * Math.acos(dot) * D;
+        st.tailDev = Math.max(st.tailDev, +dev.toFixed(1));
+        st.tailDevSum += dev;
+      }
+    }
     let worstC = 0, worstCB = '', worstJ = 0, worstJB = '';
     for (let i = 0; i < n; i++) {
       if (skip[i]) continue;
@@ -304,12 +314,12 @@ await page.evaluate(() => window.__fox.onStep(null));
 
 // ---- report -----------------------------------------------------------------------------------
 console.log(`\nLimits: ${LIMITS.change} deg/frame, ${LIMITS.jump} deg/frame^2 (60 Hz). "clip pose" = after the mixer, "final" = after procedural layers.\n`);
-console.log('| segment | steps | clip pose: max deg/frame | max jump | final: max deg/frame | max jump | spikes clip / transition / procedural / hidden |');
-console.log('|---|---|---|---|---|---|---|');
+console.log('| segment | steps | clip pose: max deg/frame | max jump | final: max deg/frame | max jump | tail_6 procedural offset max / mean deg | spikes clip / transition / procedural / hidden |');
+console.log('|---|---|---|---|---|---|---|---|');
 for (const [name, s] of Object.entries(rec.segs)) {
   const f = (x) => `${x[0]} ${x[1]}`;
   const c = s.counts;
-  console.log(`| ${name} | ${s.steps} | ${f(s.mixer.change)} | ${f(s.mixer.jump)} | ${f(s.final.change)} | ${f(s.final.jump)} | ${c.clip || 0} / ${c.transition || 0} / ${c.procedural || 0} / ${c.hidden || 0} |`);
+  console.log(`| ${name} | ${s.steps} | ${f(s.mixer.change)} | ${f(s.mixer.jump)} | ${f(s.final.change)} | ${f(s.final.jump)} | ${s.tailDev} / ${(s.tailDevSum / Math.max(1, s.steps)).toFixed(1)} | ${c.clip || 0} / ${c.transition || 0} / ${c.procedural || 0} / ${c.hidden || 0} |`);
 }
 
 function group(events) {

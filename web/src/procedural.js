@@ -15,21 +15,24 @@ const SUBSTEP = 1 / 120;
 const MAX_STEPS = 12; // at most 0.1 s of physics per frame
 
 // ---- tail chain -------------------------------------------------------------------------------
-// tail_1 (base, stiff) .. tail_6 (tip, compliant). Each joint is an angular spring that pulls
-// its tip back to where the clip puts it, RELATIVE to the parent's simulated tip, so a disturbance
-// at the base travels down the chain and whips the tip. The only drivers are the inertial
-// (fictitious) forces of the hips frame, i.e. its linear and angular acceleration: the clip's own
-// tail animation is reproduced exactly when the body is still, and every hop, turn or landing
-// adds follow-through on top. Gravity-free.
+// tail_1 (base, stiff) .. tail_6 (tip, compliant). Each link has an angular deviation from the
+// direction the clip gives it (a rotation vector kept perpendicular to the link, so lengths are
+// exact and nothing twists). A link is sprung to its PARENT's deviation, so a disturbance at the
+// base travels down the chain and whips the tip. The only drivers are the inertial (fictitious)
+// forces of the hips frame - its linear and angular acceleration - so the clip's own tail
+// animation is reproduced exactly while the body is still, and every hop, turn or landing adds
+// follow-through on top. Gravity-free. Drag / idle sway are targets for the same springs.
 const TAIL = ['tail_1', 'tail_2', 'tail_3', 'tail_4', 'tail_5', 'tail_6'];
-const TAIL_OMEGA = [34, 26, 20, 15.5, 12, 9.5]; // rad/s natural frequency per joint
-const TAIL_ZETA = [0.85, 0.62, 0.46, 0.36, 0.3, 0.26]; // damping ratio per joint
-const TAIL_MAX_BEND = [12, 18, 26, 34, 42, 50].map((d) => Math.sin(d * DEG)); // per joint, x link length
-const TAIL_INERTIA = 1.15; // gain on the inertial drive
+const TAIL_OMEGA = [30, 24, 19, 15, 12, 10]; // rad/s natural frequency per joint
+const TAIL_ZETA = [0.8, 0.6, 0.48, 0.4, 0.34, 0.3]; // damping ratio per joint
+const TAIL_SOFT = [7, 10, 13, 16, 19, 22].map((d) => d * DEG); // soft bend limit per joint
+const TAIL_HARD = 2.2; // x soft limit: fail-safe clamp for very long frames
+const TAIL_INERTIA = 0.2; // gain on the inertial drive
+const TAIL_DRIVE_HZ = 6; // low-pass on the hips' acceleration (keyframe kinks are not impacts)
 const DRAG_SHARE = [0.04, 0.1, 0.16, 0.2, 0.23, 0.27]; // bend distribution while the tail is dragged
 const DRAG_MAX = 60 * DEG;
 const DRAG_GAIN = 1.6;
-const FLICK = [0, 0.12, 0.3, 0.55, 0.85, 1.15]; // velocity kick per tip (x 1.9 units/s)
+const FLICK = [0, 1.2, 2.6, 4, 5.2, 6.2]; // rad/s angular kick per link (hover flick)
 const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle travelling wave
 
 // Typing fallback (no Type clip): lift the forearms towards the keyboard and tap.
@@ -569,11 +572,12 @@ export class Procedural {
     this.tailLen = this.tailBones.map((b, i) => (i < n - 1 ? bones[i + 1].position.length() : bones[i].position.length()));
     const vecs = () => Array.from({ length: n }, () => new THREE.Vector3());
     this.tail = {
-      d: vecs(), v: vecs(), // simulated tip deviation / velocity (frame coords)
-      tips: vecs(), heads: vecs(), // animated chain (frame coords)
-      D: vecs(), // target deviation (drag + sway)
+      phi: vecs(), w: vecs(), // simulated link deviation (rotation vector) / its rate, frame coords
+      tips: vecs(), heads: vecs(), dirs: vecs(), // animated chain (frame coords)
+      psi: vecs(), // target deviation per link (drag + sway)
       P: Array.from({ length: n + 1 }, () => new THREE.Vector3()), // bend scratch
-      f: vecs(), // inertial drive per tip
+      tau: vecs(), // inertial drive per link (angular acceleration)
+      aF: new THREE.Vector3(), alphaF: new THREE.Vector3(), // low-passed drive (frame coords)
       kin: new Kinematics(),
       modelInv: new THREE.Matrix4(),
     };
@@ -586,7 +590,9 @@ export class Procedural {
   resetTail() {
     const T = this.tail;
     if (!T) return;
-    for (const a of [T.d, T.v]) for (const x of a) x.set(0, 0, 0);
+    for (const a of [T.phi, T.w]) for (const x of a) x.set(0, 0, 0);
+    T.aF.set(0, 0, 0);
+    T.alphaF.set(0, 0, 0);
     T.kin.reset();
     for (const r of this.drag.rot) r.x = r.v = 0;
     this.drag.active = false;
@@ -631,10 +637,8 @@ export class Procedural {
   flickTail(sign = this.rng() < 0.5 ? -1 : 1) {
     const T = this.tail;
     if (!this.tailBones.length) return;
-    for (let i = 0; i < T.v.length; i++) {
-      T.v[i].x += sign * 1.9 * FLICK[i];
-      T.v[i].y += 0.5 * FLICK[i];
-    }
+    // a quick yaw about the hips' up axis (projected off each link in the next update)
+    for (let i = 0; i < T.w.length; i++) T.w[i].y += sign * FLICK[i];
     this.tailFlicks++;
   }
 
@@ -658,11 +662,12 @@ export class Procedural {
       if (i < n - 1) T.heads[i + 1].copy(bones[i + 1].position).applyQuaternion(q).add(T.heads[i]);
       if (i < n - 1) T.tips[i].copy(T.heads[i + 1]);
       else T.tips[i].copy(Y).multiplyScalar(this.tailLen[i]).applyQuaternion(q).add(T.heads[i]);
+      T.dirs[i].copy(T.tips[i]).sub(T.heads[i]).normalize();
     }
 
-    // 2. Target deviation: drag bend + idle travelling wave, as a per-joint rotation.
+    // 2. Target deviation per link: drag bend + idle travelling wave.
     const D = this.drag;
-    for (let k = 0; k < 3; k++) critDamp(D.rot[k], D.want.getComponent(k), D.active ? 16 : 28, dt);
+    for (let k = 0; k < 3; k++) critDamp(D.rot[k], D.want.getComponent(k), D.active ? 16 : 30, dt);
     D.rotVec.set(D.rot[0].x, D.rot[1].x, D.rot[2].x);
     const dragAngle = D.rotVec.length();
     const dragAxis = dragAngle > 1e-5 ? _v2.copy(D.rotVec).divideScalar(dragAngle) : null;
@@ -676,67 +681,88 @@ export class Procedural {
       if (dragAxis) _q2.premultiply(_dq.setFromAxisAngle(dragAxis, dragAngle * DRAG_SHARE[j]));
       for (let m = j + 1; m <= n; m++) P[m].sub(P[j]).applyQuaternion(_q2).add(P[j]);
     }
-    for (let i = 0; i < n; i++) T.D[i].copy(P[i + 1]).sub(T.tips[i]);
-
-    // 3. Inertial drive from the hips frame's motion (model space, so the root scale pop and
-    //    fade never read as motion).
-    T.modelInv.copy(this.fox.root.matrixWorld).invert();
-    const moving = T.kin.update(F, T.modelInv, dt);
-    if (!moving && T.kin.frames === 0) for (const a of [T.d, T.v]) for (const x of a) x.set(0, 0, 0);
-    _qi.copy(T.kin.q).invert();
-    const aF = _v.copy(T.kin.acc).applyQuaternion(_qi);
-    const alphaF = _v3.copy(T.kin.alpha).applyQuaternion(_qi);
     for (let i = 0; i < n; i++) {
-      // f = -a - alpha x r  (linear + Euler fictitious accelerations)
-      T.f[i].crossVectors(alphaF, T.tips[i]).add(aF).multiplyScalar(-TAIL_INERTIA);
+      const to = _v.copy(P[i + 1]).sub(P[i]).normalize();
+      const ang = T.dirs[i].angleTo(to);
+      if (ang < 1e-6) T.psi[i].set(0, 0, 0);
+      else T.psi[i].crossVectors(T.dirs[i], to).setLength(ang);
     }
 
-    // 4. Integrate (fixed substeps, semi-implicit Euler). Joint i pulls its tip towards the
-    //    parent's deviation (+ its own target offset), so disturbances propagate to the tip.
-    const e = _v2;
-    const ev = _s;
+    // 3. Inertial drive from the hips frame's motion (model space, so the root scale pop and
+    //    shrink never read as motion), low-passed. Angular acceleration of each link from the
+    //    fictitious acceleration f = -a - alpha x r at its tip: (dir x f) / length.
+    T.modelInv.copy(this.fox.root.matrixWorld).invert();
+    const moving = T.kin.update(F, T.modelInv, dt);
+    if (!moving && T.kin.frames === 0) this.resetTailMotion();
+    _qi.copy(T.kin.q).invert();
+    const lp = 1 - Math.exp(-2 * Math.PI * TAIL_DRIVE_HZ * dt);
+    T.aF.lerp(_v.copy(T.kin.acc).applyQuaternion(_qi), lp);
+    T.alphaF.lerp(_v.copy(T.kin.alpha).applyQuaternion(_qi), lp);
+    for (let i = 0; i < n; i++) {
+      const f = _v.crossVectors(T.alphaF, T.tips[i]).add(T.aF).multiplyScalar(-TAIL_INERTIA);
+      T.tau[i].crossVectors(T.dirs[i], f).divideScalar(this.tailLen[i]);
+    }
+
+    // 4. Integrate (fixed substeps, semi-implicit Euler), base first so each link follows its
+    //    parent's updated deviation.
+    const rel = _v2;
+    const relW = _v3;
     for (let s = 0; s < steps; s++) {
       for (let i = 0; i < n; i++) {
-        const w = TAIL_OMEGA[i];
-        const k = w * w;
-        const c = 2 * TAIL_ZETA[i] * w;
-        e.copy(T.d[i]).sub(T.D[i]);
-        ev.copy(T.v[i]);
+        const dir = T.dirs[i];
+        const w0 = TAIL_OMEGA[i];
+        rel.copy(T.phi[i]).sub(T.psi[i]);
+        relW.copy(T.w[i]);
         if (i > 0) {
-          e.sub(T.d[i - 1]).add(T.D[i - 1]);
-          ev.sub(T.v[i - 1]);
+          rel.sub(T.phi[i - 1]).add(T.psi[i - 1]);
+          relW.sub(T.w[i - 1]);
         }
-        T.v[i].addScaledVector(e, -k * SUBSTEP).addScaledVector(ev, -c * SUBSTEP).addScaledVector(T.f[i], SUBSTEP);
-        T.d[i].addScaledVector(T.v[i], SUBSTEP);
-        // keep each joint's bend within its limit (no wild poses on long or jittery frames)
-        e.copy(T.d[i]).sub(T.D[i]);
-        if (i > 0) e.sub(T.d[i - 1]).add(T.D[i - 1]);
-        const lim = TAIL_MAX_BEND[i] * this.tailLen[i];
-        const len = e.length();
-        if (len > lim) {
-          T.d[i].addScaledVector(e, lim / len - 1);
-          T.v[i].multiplyScalar(0.6);
-        }
+        // soft joint limit: past it the joint stiffens (up to x9) and damps harder, so big
+        // whips are caught smoothly instead of hitting a wall (a velocity jerk)
+        const soft = TAIL_SOFT[i];
+        const over = Math.min(1, Math.max(0, rel.length() - soft) / soft);
+        const k = w0 * w0 * (1 + 8 * over);
+        const c = 2 * TAIL_ZETA[i] * w0 * (1 + 2 * over);
+        T.w[i].addScaledVector(rel, -k * SUBSTEP).addScaledVector(relW, -c * SUBSTEP).addScaledVector(T.tau[i], SUBSTEP);
+        T.w[i].addScaledVector(dir, -T.w[i].dot(dir)); // bend only, no twist
+        T.phi[i].addScaledVector(T.w[i], SUBSTEP);
+        T.phi[i].addScaledVector(dir, -T.phi[i].dot(dir));
+        // fail-safe (very long frames only)
+        rel.copy(T.phi[i]).sub(T.psi[i]);
+        if (i > 0) rel.sub(T.phi[i - 1]).add(T.psi[i - 1]);
+        const len = rel.length();
+        const hard = soft * TAIL_HARD;
+        if (len > hard) T.phi[i].addScaledVector(rel, hard / len - 1);
       }
     }
 
-    // 5. Aim each bone at its (deviated) tip, base first.
+    // 5. Aim each bone along its deviated direction, base first.
     let maxBend = 0;
     for (let i = 0; i < n; i++) {
       const bone = bones[i];
-      _v.copy(T.tips[i]).add(T.D[i]).addScaledVector(_v3.copy(T.d[i]).sub(T.D[i]), weight);
-      F.localToWorld(_v); // desired tip, world
-      const headW = bone.getWorldPosition(_v2);
-      const want = _v.sub(headW);
-      const cur = i < n - 1 ? bones[i + 1].getWorldPosition(_v3).sub(headW) : _v3.copy(Y).applyQuaternion(bone.getWorldQuaternion(_q2));
-      if (want.lengthSq() < 1e-12 || cur.lengthSq() < 1e-12) continue;
-      want.normalize();
+      // deviation actually shown: drag/sway fully, the dynamic part scaled by the layer weight
+      const phi = _v.copy(T.phi[i]).sub(T.psi[i]).multiplyScalar(weight).add(T.psi[i]);
+      const ang = phi.length();
+      const want = _v2.copy(T.dirs[i]);
+      if (ang > 1e-6) want.applyAxisAngle(phi.divideScalar(ang), ang);
+      want.transformDirection(F.matrixWorld); // frame -> world (normalised)
+      const headW = bone.getWorldPosition(_v3);
+      const cur = i < n - 1 ? bones[i + 1].getWorldPosition(_v).sub(headW) : _v.copy(Y).applyQuaternion(bone.getWorldQuaternion(_q2));
+      if (cur.lengthSq() < 1e-12) continue;
       cur.normalize();
-      const ang = cur.angleTo(want);
-      if (ang < 1e-5) continue;
-      maxBend = Math.max(maxBend, ang);
+      const a = cur.angleTo(want);
+      if (a < 1e-5) continue;
+      maxBend = Math.max(maxBend, a);
       rotateWorld(bone, _q.setFromUnitVectors(cur, want));
     }
     this._tailBend = maxBend / DEG;
+  }
+
+  resetTailMotion() {
+    const T = this.tail;
+    for (const a of [T.phi, T.w]) for (const x of a) x.set(0, 0, 0);
+    T.aF.set(0, 0, 0);
+    T.alphaF.set(0, 0, 0);
+
   }
 }
