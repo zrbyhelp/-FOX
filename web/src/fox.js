@@ -24,6 +24,7 @@ const META_DEFAULTS = {
   Enter: { priority: 5, interruptible: false, lookAt: 0.3 },
   Exit: { priority: 5, interruptible: false, lookAt: 0 },
   Type: { priority: 1, lookAt: 0.45 },
+  Dance: { priority: 2, lookAt: 0.2 },
 };
 
 // Behaviour the web app relies on, whatever clips.json says (Jump carries root motion and must
@@ -203,6 +204,122 @@ export class DozeFx {
       const sc = 0.045 + 0.06 * life;
       s.scale.set(sc, sc, sc);
       s.material.opacity = Math.min(1, life * 6) * (1 - life) * 1.1;
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------------------------
+// Music notes popping beside the head on the beats of the Dance clip (same beats as the 2D
+// Dance motion's 'note' events). Skipped with prefers-reduced-motion.
+
+// [clip s, side]: +1 = the fox's left
+const NOTE_BEATS = [[0.7, 1], [1.3, -1], [1.9, 1], [2.5, -1], [3.3, 1], [4.2, -1], [4.8, 1]];
+const NOTE_OFFSET = new THREE.Vector3(0.27, 0.2, 0.08); // from the head pivot, fox space (x per side)
+const NOTE_LIFE = 1.5; // s
+
+/** ♪ (eighth note) or ♫ (beamed pair), white outline, orange gradient. */
+function noteTexture(beamed) {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  g.scale(64 / 96, 64 / 96);
+  const p = new Path2D();
+  const head = (x, y) => p.ellipse(x, y, 13, 9.5, -0.4, 0, Math.PI * 2);
+  if (beamed) {
+    head(25, 72);
+    head(63, 64);
+    p.rect(31.5, 22, 6, 49);
+    p.rect(69.5, 14, 6, 49);
+    p.moveTo(31.5, 20);
+    p.lineTo(75.5, 11);
+    p.lineTo(75.5, 23);
+    p.lineTo(31.5, 32);
+    p.closePath();
+  } else {
+    head(38, 70);
+    p.rect(44.5, 14, 6, 55);
+    p.moveTo(44.5, 12);
+    p.bezierCurveTo(50, 28, 74, 30, 66, 58);
+    p.bezierCurveTo(66, 42, 58, 36, 50.5, 34);
+    p.closePath();
+  }
+  g.lineJoin = 'round';
+  g.lineWidth = 9;
+  g.strokeStyle = '#ffffff';
+  g.stroke(p);
+  const grad = g.createLinearGradient(0, 10, 0, 86);
+  grad.addColorStop(0, '#ff9a5c');
+  grad.addColorStop(1, '#e0672a');
+  g.fillStyle = grad;
+  g.fill(p);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  return tex;
+}
+
+export class NoteFx {
+  constructor(scene, fox, { reducedMotion = false } = {}) {
+    this.fox = fox;
+    this.reducedMotion = reducedMotion;
+    const tex = [noteTexture(false), noteTexture(true)];
+    this.pool = [];
+    for (let i = 0; i < 6; i++) {
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex[i % 2], transparent: true, depthWrite: false, opacity: 0 }));
+      s.name = 'DanceNote';
+      s.userData = { life: -1, origin: new THREE.Vector3(), out: new THREE.Vector3(), phase: i };
+      scene.add(s);
+      this.pool.push(s);
+    }
+    this.t = -1; // Dance clip time seen last frame
+    this.shown = 0; // notes popped (tests)
+    this._v = new THREE.Vector3();
+    this._q = new THREE.Quaternion();
+  }
+
+  clear() {
+    this.t = -1;
+    for (const s of this.pool) { s.userData.life = -1; s.visible = false; }
+  }
+
+  get active() {
+    return this.pool.some((s) => s.userData.life >= 0);
+  }
+
+  spawn(side) {
+    const glyph = this.shown++ % 2; // ♪ ♫ in turn
+    const s = this.pool.find((p, i) => p.userData.life < 0 && i % 2 === glyph) || this.pool.find((p) => p.userData.life < 0);
+    if (!s) return;
+    const u = s.userData;
+    // beside the head, in the fox's frame (not the root bone's: it spins during the dance)
+    this.fox.root.getWorldQuaternion(this._q);
+    u.out.set(side, 0, 0).applyQuaternion(this._q);
+    this.fox.bones.head.getWorldPosition(u.origin).add(this._v.set(NOTE_OFFSET.x * side, NOTE_OFFSET.y, NOTE_OFFSET.z).applyQuaternion(this._q));
+    u.life = 0;
+    s.position.copy(u.origin);
+    s.visible = true;
+  }
+
+  /** `t`: seconds into the Dance clip that is playing, or null. */
+  update(dt, t) {
+    if (t != null && !this.reducedMotion) {
+      const prev = t >= this.t ? this.t : -1; // restarted: from the top
+      for (const [bt, side] of NOTE_BEATS) if (bt > prev && bt <= t) this.spawn(side);
+    }
+    this.t = t ?? -1;
+    for (const s of this.pool) {
+      const u = s.userData;
+      if (u.life < 0) continue;
+      u.life += dt / NOTE_LIFE;
+      if (u.life >= 1) { u.life = -1; s.visible = false; continue; }
+      const L = u.life;
+      const k = Math.min(1, (L * NOTE_LIFE) / 0.28);
+      const pop = 1 + 2.2 * (k - 1) ** 3 + 1.2 * (k - 1) ** 2; // easeOutBack
+      const sc = 0.075 * pop;
+      s.position.copy(u.origin).addScaledVector(u.out, 0.05 * L + 0.012 * Math.sin(L * 9 + u.phase));
+      s.position.y += 0.16 * (1 - (1 - L) ** 3);
+      s.scale.set(sc, sc, sc);
+      s.material.rotation = -0.12 * Math.sign(u.out.x || 1) + 0.2 * Math.sin(L * 7.5 + u.phase);
+      s.material.opacity = 1 - THREE.MathUtils.smoothstep(L, 0.55, 1);
     }
   }
 }

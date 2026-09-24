@@ -3,7 +3,7 @@
 // as waving, wagging, typing), timed events, and fade in / out. The MotionPlayer blends tracks
 // over the idle base: a parameter a motion does not touch keeps the idle value, so breathing and
 // sway continue underneath every one-shot.
-import { makeCurve, smooth, smoothstep, clamp } from './math2d.js';
+import { makeCurve, smooth, smoothstep, clamp, DEG } from './math2d.js';
 
 const TAU = Math.PI * 2;
 
@@ -24,6 +24,10 @@ export const ARM = {
   balance: [[18, 10, 0], 0],
   crouch: [[-8, -12, 0], 0],
   tail: [[12, 12, 0], 0],
+  danceUp: [[56, 84, 16], 2], // elbow out, paw up beside the cheek
+  danceDown: [[10, 6, 0], 0],
+  armsOut: [[56, 14, 6], 0],
+  cheer: [[48, 90, 30], 2],
 };
 
 /**
@@ -75,6 +79,7 @@ function motion(name, d) {
 // small helpers for procedural overlays
 const env = (t, a, b, c, d) => smoothstep(a, b, t) * (1 - smoothstep(c, d, t));
 const hop = (s) => (s <= 0 || s >= 1 ? 0 : 4 * s * (1 - s)); // unit parabola
+const smoother = (x) => (x <= 0 ? 0 : x >= 1 ? 1 : x * x * x * (x * (6 * x - 15) + 10));
 
 function waveArm(v, t, t0, t1, side = 'L', rate = 2.6) {
   const e = env(t, t0 - 0.1, t0 + 0.15, t1 - 0.2, t1 + 0.05);
@@ -281,6 +286,85 @@ def('LookBack', {
     ParamTailSwing: [[0, 22], [0.45, 55], [0.85, 0], [1.25, 50], [1.65, 8], [2.05, 40], [2.7, 22]],
     ParamEyeSmile: [[0, 0], [1.2, 0], [1.6, 0.6], [2.2, 0.6], [2.7, 0]],
   },
+});
+
+// The 3D Dance clip's choreography (6 s, beat 0.6 s): a small crouch, a groove of 4 beats swaying
+// side to side with the paws raised in turn (L R L R), a hop with a full turn and the arms out,
+// a cheer with both paws up shaking, a little bow. 'note' events: ♪ beside the head (data = side,
+// +1 = the fox's left = screen right), one per beat.
+const BEAT = 0.6;
+
+def('Dance', {
+  duration: 6.0, lookAt: 0.2,
+  arms: {
+    L: [[0, 'rest'], [0.35, 'crouch'], [0.7, 'danceUp'], [1.3, 'danceDown'], [1.9, 'danceUp'], [2.5, 'danceDown'],
+      [2.85, 'armsOut'], [3.75, 'armsOut'], [4.05, 'cheer'], [5.1, 'cheer'], [5.5, 'rest'], [6.0, 'rest']],
+    R: [[0, 'rest'], [0.35, 'crouch'], [0.7, 'danceDown'], [1.3, 'danceUp'], [1.9, 'danceDown'], [2.5, 'danceUp'],
+      [2.85, 'armsOut'], [3.75, 'armsOut'], [4.05, 'cheer'], [5.1, 'cheer'], [5.5, 'rest'], [6.0, 'rest']],
+  },
+  curves: {
+    ParamEyeSmile: [[0, 0], [0.3, 1], [5.6, 1], [6.0, 0]],
+    ParamMouthOpen: [[0, 0], [0.3, 0.55], [5.1, 0.55], [5.45, 0], [6.0, 0]],
+    ParamAngleY: [[0, 0], [0.3, -6], [0.55, 3], [2.8, 3], [3.3, 5], [4.0, 7], [5.1, 6], [5.55, -22], [6.0, 0]],
+    ParamEarL: [[0, 0], [0.4, 5], [5.2, 5], [6.0, 0]],
+    ParamEarR: [[0, 0], [0.4, 5], [5.2, 5], [6.0, 0]],
+  },
+  proc(t, v) {
+    // anticipation: a small crouch before the first beat
+    let squash = -0.45 * env(t, 0.02, 0.28, 0.32, 0.5);
+    let y = 0;
+    // groove (0.4 .. 2.8 s): towards the raised paw on every beat (the fox's left first), a bounce
+    // per beat (landing between beats), the head tilted against the sway
+    const g = env(t, 0.35, 0.55, 2.75, 2.95);
+    const sway = Math.sin((Math.PI * (t - 0.4)) / BEAT);
+    const up = Math.abs(sway);
+    v.ParamRootX += 0.035 * g * sway;
+    v.ParamBodyAngleZ -= 5 * g * sway;
+    v.ParamBodyAngleX += 3 * g * sway;
+    v.ParamAngleZ += 8 * g * sway;
+    v.ParamAngleX -= 6 * g * sway;
+    y += 0.02 * g * up;
+    squash += g * (0.1 * up - 0.3 * Math.exp(-(up * up) / 0.03));
+    // hop + full turn (2.85 .. 3.75 s) with the arms out; the face sweeps round with the turn
+    const u = (t - 2.85) / 0.9;
+    let tail = 0;
+    if (u > 0 && u < 1) {
+      const spin = 360 * smoother(u);
+      const s = Math.sin(spin * DEG);
+      v.ParamSpin = spin;
+      v.ParamAngleX += 26 * s;
+      v.ParamBodyAngleX += 8 * s;
+      v.ParamEyeBallX += 0.5 * s;
+      y += 0.07 * Math.sin(Math.PI * u);
+      tail += 18 * Math.sin(Math.PI * u);
+    }
+    squash += 0.12 * env(t, 2.85, 3.0, 3.55, 3.7) - 0.45 * Math.exp(-((t - 2.8) ** 2) / 0.003) - 0.4 * Math.exp(-((t - 3.8) ** 2) / 0.003);
+    // cheer (3.85 .. 5.3 s): both paws up shaking (~4 Hz), two bounces, the head rocking along
+    const c = env(t, 3.85, 4.05, 5.2, 5.45);
+    const shake = TAU * 4 * t;
+    v.ParamArmLB += 12 * c * Math.sin(shake);
+    v.ParamArmRB += 12 * c * Math.sin(shake);
+    v.ParamArmLC += 10 * c * Math.sin(shake - 0.9);
+    v.ParamArmRC += 10 * c * Math.sin(shake - 0.9);
+    let b = 0;
+    if (t > 3.9 && t < 5.1) {
+      const ph = (Math.PI * (t - 3.9)) / BEAT;
+      b = Math.abs(Math.sin(ph));
+      y += 0.028 * c * b;
+      squash += c * (0.12 * b - 0.3 * Math.exp(-(b * b) / 0.03));
+      v.ParamAngleZ += 4 * c * Math.sin(ph);
+    }
+    // bow: a little dip with the head down (ParamAngleY curve)
+    squash -= 0.3 * env(t, 5.2, 5.55, 5.6, 6.0);
+    v.ParamRootY = y;
+    v.ParamSquash = squash;
+    // the tail wags on the beat, the ears flop with the bounces
+    const e = Math.max(g, c);
+    v.ParamTailSwing = 24 + 20 * e * Math.sin((TAU * (t - 0.4)) / BEAT) + tail;
+    v.ParamEarL += 8 * (g * up + c * b);
+    v.ParamEarR += 8 * (g * up + c * b);
+  },
+  events: [[0.7, 'note', 1], [1.3, 'note', -1], [1.9, 'note', 1], [2.5, 'note', -1], [3.3, 'note', 1], [4.2, 'note', -1], [4.8, 'note', 1]],
 });
 
 def('Pet', {

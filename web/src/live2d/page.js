@@ -10,7 +10,7 @@ const noUI = params.get('noui') === '1';
 
 const ACTIONS = [
   ['打招呼', 'Wave'], ['开心', 'Happy'], ['比心', 'Heart'], ['摊手', 'Shrug'], ['指向Logo', 'Present'], ['够Logo', 'Reach'],
-  ['跳跃', 'Jump'], ['坐下', 'Sit'], ['打盹', 'Doze'], ['回头', 'LookBack'], ['打字', 'Type'], ['离开', 'Exit'], ['回来', 'Enter'],
+  ['跳跃', 'Jump'], ['跳舞', 'Dance'], ['坐下', 'Sit'], ['打盹', 'Doze'], ['回头', 'LookBack'], ['打字', 'Type'], ['离开', 'Exit'], ['回来', 'Enter'],
 ];
 
 function el(tag, props = {}, children = []) {

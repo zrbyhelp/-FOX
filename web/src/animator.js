@@ -18,6 +18,7 @@ const FALLBACK = {
   Shrug: ['Wave'],
   Jump: ['Happy', 'Wave'],
   LookBack: ['Wave'],
+  Dance: ['Happy', 'Wave'],
 };
 
 const FADE = 0.3;

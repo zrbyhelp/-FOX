@@ -112,6 +112,7 @@ export function makeLayerMaterial(map, part = 0) {
     },
     vertexShader: LAYER_VERT,
     fragmentShader: LAYER_FRAG,
+    side: THREE.DoubleSide, // the dance spin (ParamSpin) mirrors the deformed meshes
     ...PREMUL_BLEND,
   });
 }

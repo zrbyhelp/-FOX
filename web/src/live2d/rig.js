@@ -52,6 +52,7 @@ export const PARAMS = {
   ParamRootRot: [-30, 30, 0],
   ParamSquash: [-1, 1, 0], // + = stretch (taller), - = squash
   ParamScale: [0, 1.5, 1], // pop-in
+  ParamSpin: [0, 360, 0], // turn about the vertical axis (dance): the root narrows, flips, opens
   // physics outputs (written by physics.js)
   PhysEarL: [-90, 90, 0],
   PhysEarR: [-90, 90, 0],
@@ -82,6 +83,7 @@ const HEAD_TURN = 0.05; // model units the face centre shifts at |AngleX| = 30
 const HEAD_NOD = 0.036; // ... at |AngleY| = 30
 const ARM_SPLIT = 0.82; // front part of an arm = within this x upper-arm length of the elbow, or beyond it
 const HEAD_GLOBAL = 0.16; // share of the shift that moves the whole head (silhouette included)
+const SPIN_MIN_WIDTH = 0.25; // ParamSpin: relative width when seen edge-on
 const FACE_DEPTH = {
   Nose: 1.4, MouthSmile: 1.22, MouthOpen: 1.22,
   Eye_L: 1.04, Eye_R: 1.04, EyeHappy_L: 1.04, EyeHappy_R: 1.04, EyeSleep_L: 1.04, EyeSleep_R: 1.04,
@@ -325,7 +327,11 @@ export class Rig {
     // root: pop scale + squash/stretch about the feet, rotation, translation
     const sq = p.ParamSquash;
     const sc = p.ParamScale;
-    affScale(T.root, sc * (1 - 0.07 * sq), sc * (1 + 0.1 * sq), 0, 0);
+    // spin: a flat puppet cannot turn, so it narrows to a sliver, shows its mirror image (the
+    // "back") and opens again; the sliver keeps some width, the body is round
+    const c = Math.cos(p.ParamSpin * DEG);
+    const spin = (c < 0 ? -1 : 1) * lerp(SPIN_MIN_WIDTH, 1, Math.abs(c));
+    affScale(T.root, sc * (1 - 0.07 * sq) * spin, sc * (1 + 0.1 * sq), 0, 0);
     affMul(T.root, affRotate(T.tmp, p.ParamRootRot * DEG, 0, 0), T.root);
     affMul(T.root, affTranslate(T.tmp, p.ParamRootX, p.ParamRootY), T.root);
 

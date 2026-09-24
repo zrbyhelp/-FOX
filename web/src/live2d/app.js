@@ -26,6 +26,7 @@
  *                false = transparent canvas over the host's own background).
  *   intro        pop in + wave on every start() (default true), like the 3D fox's page load
  *                and its 回来; 'Exit' waves goodbye and pops away, the logo goes with it.
+ *   reducedMotion  no decorative particles (dance notes); default: prefers-reduced-motion.
  *   seed         RNG seed (deterministic behaviour for tests).
  *   debug        preserveDrawingBuffer (screenshots) + window.__live2d = app.
  *
@@ -35,7 +36,7 @@
  *                         start()/stop() can be called any number of times (3D/2D switch).
  *   dispose()             stop() + free every GPU resource + remove the canvas. Final.
  *   request(name)         same names as the 3D UI: 'Wave' 'Happy' 'Heart' 'Present' 'Reach'
- *                         'Shrug' 'Jump' 'Sit_Think' 'Sit_Doze' 'Pet' 'LookBack' 'Enter' 'Exit'
+ *                         'Shrug' 'Jump' 'Dance' 'Sit_Think' 'Sit_Doze' 'Pet' 'LookBack' 'Enter' 'Exit'
  *                         'Type' 'StandUp' 'Idle', plus the 3D trigger aliases 'Sit' 'Doze'
  *                         'Wake' 'PetEnd' 'logo' and the parts 'head' 'body' 'tail' 'ear_L'
  *                         'ear_R'. 'Type' runs a short simulated typing demo (touch devices).
@@ -66,7 +67,7 @@ import { Rig, defaultParams, clampParams } from './rig.js';
 import { Physics } from './physics.js';
 import { MOTIONS, MotionPlayer, applyIdle } from './motions.js';
 import { Controller, POP_IN, POP_OUT } from './controller.js';
-import { Logo2D, HeartFx, DozeFx, Keyboard2D, LOGO_POS, LOGO_POS_PORTRAIT } from './props.js';
+import { Logo2D, HeartFx, DozeFx, NoteFx, Keyboard2D, LOGO_POS, LOGO_POS_PORTRAIT } from './props.js';
 import { Critical, makeRng, clamp, softClamp, smooth, easeOutBack, affApplyX, affApplyY, affAngle } from './math2d.js';
 import { TalkRhythm } from '../talk.js';
 
@@ -80,7 +81,7 @@ const LOGO_OUT_DELAY = 0.06; // s the logo pops away after the fox
 const EXPR_OMEGA = 6; // expression params ease (critically damped): a layer swap takes >= ~0.3 s
 const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
 
-const CLIPS = ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp', 'Idle', 'SitDown', 'Idle_LookAround'];
+const CLIPS = ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Dance', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp', 'Idle', 'SitDown', 'Idle_LookAround'];
 const ALIASES = ['Sit', 'Doze', 'Wake', 'PetEnd', 'logo', 'head', 'body', 'tail', 'ear_L', 'ear_R'];
 const SUPPORTED = new Set([...CLIPS, ...ALIASES]);
 
@@ -112,7 +113,7 @@ function codeFor(ch) {
 
 export async function createLive2DApp({
   container, spec = null, insetBottom = 0, base = './live2d/', keyboard: listenKeys = true, background = true,
-  intro = true, seed, debug = false,
+  intro = true, seed, debug = false, reducedMotion = !!window.matchMedia?.('(prefers-reduced-motion: reduce)').matches,
 } = {}) {
   if (!container) throw new Error('createLive2DApp: container is required');
   const rng = makeRng(seed ?? Math.floor(Math.random() * 2 ** 32));
@@ -136,6 +137,7 @@ export async function createLive2DApp({
   const logo = new Logo2D(puppet, { pieces: spec?.logo?.pieces });
   const hearts = new HeartFx(puppet);
   const doze = new DozeFx(puppet);
+  const notes = new NoteFx(puppet);
   const keyboard = new Keyboard2D(puppet, { order: (puppet.byName.ScarfFlap?.baseOrder ?? 160) + 3 });
 
   const defaults = defaultParams();
@@ -148,7 +150,7 @@ export async function createLive2DApp({
   controller.on((type, d) => {
     if (type === 'clip') emit({ type: 'clip', name: d.clip, intent: d.intent });
     else if (type === 'state') emit({ type: 'state', from: d.from, to: d.to });
-    else if (type === 'motionEvent') onMotionEvent(d.name);
+    else if (type === 'motionEvent') onMotionEvent(d.name, d.data);
     else if (type === 'presence') {
       // the logo arrives a beat after the fox and leaves just after it; hidden while away
       if (d.mode === 'popIn') logo.popIn(LOGO_IN_DELAY);
@@ -243,7 +245,7 @@ export async function createLive2DApp({
     }
   }
 
-  function onMotionEvent(name) {
+  function onMotionEvent(name, data) {
     if (name === 'heart') {
       const a = rig.point('pawL');
       const b = rig.point('pawR');
@@ -255,6 +257,9 @@ export async function createLive2DApp({
     } else if (name === 'logoGlow') {
       S.glowUntil = S.time + 1.6;
       S.logoFocusUntil = Math.max(S.logoFocusUntil, S.time + 2.5);
+    } else if (name === 'note' && !reducedMotion) {
+      const h = rig.point('headCenter', tmp);
+      notes.pop(h[0], h[1], data ?? 0);
     }
   }
 
@@ -668,6 +673,7 @@ export async function createLive2DApp({
     kbAnchor[2] = affAngle(T);
     keyboard.update(dt, kbAnchor);
     hearts.update(dt);
+    notes.update(dt);
     doze.setActive(sitting && controller.clip === 'Sit_Doze' && !controller.hidden);
     doze.update(dt, rig.point('headTop', tmp));
     updateShadow();
@@ -707,6 +713,7 @@ export async function createLive2DApp({
     keyboard.mode = 'hidden';
     keyboard.scale = 0;
     hearts.clear();
+    notes.clear();
     doze.clear();
     doze.setActive(false);
     player.clear();
@@ -772,6 +779,7 @@ export async function createLive2DApp({
       listeners.clear();
       logo.dispose();
       hearts.dispose();
+      notes.dispose();
       doze.dispose();
       keyboard.dispose();
       puppet.dispose();
@@ -916,6 +924,8 @@ export async function createLive2DApp({
           keystrokes: S.typing.keystrokes,
           heartsShown: hearts.shown,
           heartActive: hearts.active,
+          notesShown: notes.shown,
+          notesActive: notes.active,
           dozeZ: doze.active,
           earFlicks: S.flicks,
           tracks: player.tracks.map((t) => `${t.name}:${t.w.toFixed(2)}`),
