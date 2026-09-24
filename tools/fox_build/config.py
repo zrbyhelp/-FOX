@@ -108,13 +108,13 @@ P = {
 # Tail centre-line (cubic Catmull-Rom through these points). Root sits inside the butt on
 # the mid-line; the tail sweeps back and out to the fox's LEFT (+X), rises beside the body so
 # it frames it from the front / front-right (like the art), tip curling forward and in.
-TAIL_SPLINE = [
-    (0.000, 0.105, 0.165),
-    (0.062, 0.228, 0.150),
-    (0.168, 0.296, 0.250),
-    (0.232, 0.298, 0.405),
-    (0.228, 0.248, 0.540),
-    (0.192, 0.190, 0.606),
+TAIL_SPLINE = [                        # bends gently near the root (the thick tube must not fold)
+    (0.000, 0.105, 0.170),
+    (0.040, 0.218, 0.166),
+    (0.128, 0.300, 0.236),
+    (0.214, 0.316, 0.390),
+    (0.228, 0.264, 0.535),
+    (0.192, 0.200, 0.606),
 ]
 
 # --------------------------------------------------------------------------------------
