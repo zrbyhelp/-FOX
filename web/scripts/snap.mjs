@@ -32,7 +32,10 @@ const refNum = { Happy: 1, Wave: 2, Present: 3, Sit_Think: 4, Reach: 5, Shrug: 6
 function preset(name, clips) {
   switch (name) {
     case 'refs':
-      return Object.entries(refTimes).map(([clip, t]) => ({ name: `ref${refNum[clip]}_${clip}`, clip, t, cam: 'ref34' }));
+      // ref 5 shows the activated logo (star centred, cubes orbiting)
+      return Object.entries(refTimes).map(([clip, t]) => ({
+        name: `ref${refNum[clip]}_${clip}`, clip, t: clipMeta[clip]?.refTime ?? t, cam: 'ref34', logo: clip === 'Reach' ? 'active' : 'idle',
+      }));
     case 'turntable':
       return ['ref34', 'front', 'side', 'back34', 'top'].map((cam) => ({ name: `turn_${cam}`, clip: 'Idle', t: 0, cam }));
     case 'tail':
@@ -59,7 +62,7 @@ let server = null;
 let base = url;
 if (!base) {
   const port = 5300 + Math.floor(Math.random() * 400);
-  server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: webDir, stdio: 'ignore' });
+  server = spawn('npx', ['vite', '--port', String(port), '--strictPort'], { cwd: webDir, stdio: 'ignore', env: { ...process.env, FOX_NO_HMR: '1' } });
   base = `http://localhost:${port}/`;
   for (let i = 0; i < 60; i++) {
     try { const r = await fetch(base); if (r.ok) break; } catch {}
@@ -77,6 +80,7 @@ await page.goto(`${base}${sep}debug=1&noui=1${query ? '&' + query : ''}`);
 await page.waitForFunction(() => window.__foxReady === true, null, { timeout: 180000 });
 const clipInfo = await page.evaluate(() => window.__fox.clipInfo ? window.__fox.clipInfo() : window.__fox.clips.map((n) => ({ name: n, duration: 1 })));
 const clips = clipInfo.map((c) => c.name);
+const clipMeta = Object.fromEntries(clipInfo.map((c) => [c.name, c]));
 const dur = Object.fromEntries(clipInfo.map((c) => [c.name, c.duration]));
 
 let shots = [];

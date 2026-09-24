@@ -1,79 +1,162 @@
-// v0 minimal viewer (to be replaced by the full app). Exposes window.__fox for snapshots.
+// Bootstrap: load everything, warm up shaders, run the frame loop.
+//
+// URL parameters: ?model=dev/m1.glb  ?quality=low  ?noui=1  ?debug=1 (freeze auto behaviours,
+// preserve drawing buffer)  ?logo=procedural (ignore logo.glb)
 import * as THREE from 'three';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import spec from '../../spec.json';
-
-const canvas = document.getElementById('stage');
-const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, preserveDrawingBuffer: true });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-renderer.setSize(window.innerWidth, window.innerHeight);
-renderer.toneMapping = THREE.NeutralToneMapping;
-renderer.shadowMap.enabled = true;
-
-const scene = new THREE.Scene();
-scene.background = new THREE.Color(0xeceae9);
-const pmrem = new THREE.PMREMGenerator(renderer);
-scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-scene.environmentIntensity = 0.6;
-const key = new THREE.DirectionalLight(0xffffff, 2.0);
-key.position.set(-1.5, 3, 2.5);
-key.castShadow = true;
-scene.add(key);
-const ground = new THREE.Mesh(new THREE.PlaneGeometry(10, 10), new THREE.ShadowMaterial({ opacity: 0.12 }));
-ground.rotation.x = -Math.PI / 2;
-ground.receiveShadow = true;
-scene.add(ground);
-
-const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.01, 50);
-function setCam(name) {
-  const c = spec.cameras[name] || spec.cameras.ref34;
-  camera.fov = c.fov;
-  camera.position.fromArray(c.position);
-  camera.lookAt(new THREE.Vector3().fromArray(c.target));
-  camera.updateProjectionMatrix();
-}
-setCam('ref34');
+import { createStage, createBlobShadow } from './scene.js';
+import { createMaterialLibrary } from './materials.js';
+import { loadFox, makeLoader, DozeFx } from './fox.js';
+import { loadLogo, Logo } from './logo.js';
+import { Animator } from './animator.js';
+import { Procedural } from './procedural.js';
+import { Interaction } from './interaction.js';
+import { createUI, createLoader } from './ui.js';
+import { installDebug, makeRng } from './debug.js';
 
 const params = new URLSearchParams(location.search);
-const gltf = await new GLTFLoader().loadAsync('./models/' + (params.get('model') || 'fox.glb'));
-const fox = gltf.scene;
-fox.traverse((o) => {
-  if (o.isMesh) { o.frustumCulled = false; o.castShadow = true; }
-});
-scene.add(fox);
-const mixer = new THREE.AnimationMixer(fox);
-const actions = Object.fromEntries(gltf.animations.map((c) => [c.name, mixer.clipAction(c)]));
-let current = actions.Idle;
-current?.play();
+const debug = params.get('debug') === '1';
+const noUI = params.get('noui') === '1';
+const quality = params.get('quality') === 'low' ? 'low' : 'high';
+const modelFile = params.get('model') || 'fox.glb';
+const clipsFile = modelFile === 'fox.glb' ? 'clips.json' : modelFile.replace(/\.glb$/, '.clips.json');
 
-let running = true;
-const clock = new THREE.Clock();
-function frame() {
-  if (!running) return;
-  mixer.update(Math.min(clock.getDelta(), 0.05));
-  renderer.render(scene, camera);
-  requestAnimationFrame(frame);
-}
-requestAnimationFrame(frame);
+const easeOutBack = (x, s = 1.7) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
 
-window.addEventListener('resize', () => {
-  camera.aspect = window.innerWidth / window.innerHeight;
-  camera.updateProjectionMatrix();
-  renderer.setSize(window.innerWidth, window.innerHeight);
-});
+async function main() {
+  const loaderUI = noUI ? null : createLoader();
+  const canvas = document.getElementById('stage');
+  const rng = makeRng(debug ? 1 : Math.floor(Math.random() * 2 ** 32));
+  const stage = createStage(canvas, { spec, quality, debug });
+  const { renderer, scene, camera, controls } = stage;
+  const materials = createMaterialLibrary({ anisotropy: Math.min(8, renderer.capabilities.getMaxAnisotropy()) });
+  const gltfLoader = makeLoader();
 
-window.__fox = {
-  clips: gltf.animations.map((c) => c.name),
-  clipInfo: () => gltf.animations.map((c) => ({ name: c.name, duration: c.duration })),
-  async pose({ clip = 'Idle', t = 0, cam = 'ref34' } = {}) {
-    running = false;
-    mixer.stopAllAction();
-    const a = actions[clip];
-    if (a) { a.reset().play(); mixer.setTime(t); }
-    setCam(cam);
+  let fox;
+  let logoRes;
+  try {
+    [fox, logoRes] = await Promise.all([
+      loadFox({ url: `./models/${modelFile}`, clipsUrl: `./models/${clipsFile}`, spec, materials }),
+      loadLogo({ url: params.get('logo') === 'procedural' ? null : './models/logo.glb', loader: gltfLoader, materials }),
+    ]);
+  } catch (err) {
+    loaderUI?.fail('模型加载失败');
+    throw err;
+  }
+
+  scene.add(fox.root);
+  const logo = new Logo(logoRes.object, { spec, source: logoRes.source });
+  logo.addTo(scene);
+  const foxShadow = createBlobShadow({ radius: 0.34, opacity: 0.5 });
+  scene.add(foxShadow);
+  const dozeFx = new DozeFx(scene, fox.bones.head);
+
+  const animator = new Animator(fox, { rng });
+  const procedural = new Procedural(fox, { rng });
+  const interaction = new Interaction({ canvas, stage, fox, logo, animator, procedural, spec, rng });
+  if (debug) {
+    animator.auto = false;
+    procedural.randomness = false;
+  }
+
+  // ---- UI & view ----------------------------------------------------------------------------
+  let userMoved = false;
+  controls.addEventListener('start', () => { userMoved = true; });
+  let ui = null;
+  if (!noUI) {
+    ui = createUI({
+      trigger: (name) => interaction.trigger(name),
+      has: (name) => animator.has(name),
+      onFollow: (on) => { interaction.followPointer = on; },
+      onResetView: () => { userMoved = false; stage.setView('ref34'); },
+    });
+  }
+  const layout = () => {
+    stage.resize();
+    stage.setInsetBottom(ui ? ui.height() + 8 : 0);
+    if (!userMoved) stage.setView(stage.viewName);
+  };
+  window.addEventListener('resize', layout);
+  layout();
+
+  // ---- per-frame ----------------------------------------------------------------------------
+  const intro = { t: 0, done: false };
+  const hipsBone = fox.bones.hips || fox.root;
+  const v = new THREE.Vector3();
+
+  function updateShadows() {
+    const s = fox.root.scale.y;
+    hipsBone.getWorldPosition(v);
+    const dy = (v.y - fox.restHipsY * s) / Math.max(s, 1e-3); // + when jumping, - when sitting
+    foxShadow.position.set(v.x, 0.002, v.z);
+    foxShadow.scale.setScalar(THREE.MathUtils.clamp(1 - dy * 1.6, 0.45, 1.2) * s);
+    foxShadow.material.opacity = foxShadow.userData.baseOpacity * THREE.MathUtils.clamp(1 - dy * 2.2, 0.3, 1.15) * Math.min(1, s);
+  }
+
+  function updateIntro(dt) {
+    if (intro.done) return;
+    intro.t += dt;
+    const s = Math.min(1, intro.t / 0.8);
+    fox.root.scale.setScalar(Math.max(0.001, easeOutBack(s)));
+    if (s >= 1) intro.done = true;
+  }
+
+  function step(dt) {
+    procedural.restore();
+    updateIntro(dt);
+    animator.update(dt);
+    fox.root.updateMatrixWorld(true);
+    logo.update(dt);
+    interaction.update(dt);
+    procedural.update(dt, animator.layers);
+    dozeFx.setActive(animator.state === 'Sitting' && animator.clip === 'Sit_Doze');
+    dozeFx.update(dt);
+    updateShadows();
+  }
+
+  const timer = new THREE.Timer();
+  timer.connect(document);
+  let running = false;
+  let maxDelta = 0.1; // s; long frames slow the animation down instead of jumping
+  function frame() {
+    if (!running) return;
+    requestAnimationFrame(frame);
+    timer.update(); // performance.now(): monotonic, unlike the rAF timestamp vs. timer.reset()
+    step(THREE.MathUtils.clamp(timer.getDelta(), 0, maxDelta));
+    controls.update();
     renderer.render(scene, camera);
-    return true;
-  },
-};
-window.__foxReady = true;
+  }
+
+  const app = {
+    stage, fox, logo, animator, procedural, interaction, rng, dozeFx, updateShadows, materials, step,
+    startLoop() {
+      if (running) return;
+      running = true;
+      timer.reset();
+      requestAnimationFrame(frame);
+    },
+    stopLoop() { running = false; },
+    setMaxDelta(s) { maxDelta = s; },
+    finishIntro() {
+      intro.done = true;
+      fox.root.scale.setScalar(1);
+    },
+  };
+
+  // ---- warm-up: compile every program (incl. shadow + sprite) before the first real frame ----
+  fox.root.scale.setScalar(0.001);
+  logo.startPop(0.35);
+  logo.update(0);
+  await renderer.compileAsync(scene, camera);
+  renderer.render(scene, camera);
+  dozeFx.clear();
+
+  animator.toIdle(0);
+  animator.request('Wave'); // pop-in greeting
+  app.startLoop();
+  installDebug(app);
+  loaderUI?.done();
+  window.__foxReady = true;
+}
+
+main();
