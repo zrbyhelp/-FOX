@@ -315,9 +315,10 @@ class ArmSolver:
     search starts from the analytic 2-bone IK solution. Elbow twist and extreme bends are
     penalised so poses stay natural."""
 
-    def __init__(self, rig: Rig, arm_parts: dict, body_sdf, head_sdf, stride=10):
+    def __init__(self, rig: Rig, arm_parts: dict, body_sdf, head_sdf, stride=10, body_only=None):
         self.rig = rig
-        self.body_sdf = body_sdf
+        self.body_sdf = body_sdf                  # body (+ anything the arms must stay out of)
+        self.body_only = body_only or body_sdf    # flap=False: the arm may push the scarf flap aside
         self.head_sdf = head_sdf
         self.samples = {}
         for s in ("L", "R"):
@@ -332,9 +333,10 @@ class ArmSolver:
             self.samples[s] = (V, W)
 
     def solve(self, pose: Pose, side: str, target, aim=None, margin=0.004, bend_max=95.0,
-              head_margin=0.002, iters=2500, palm=None):
+              head_margin=0.002, iters=2500, palm=None, flap=True):
         from scipy.optimize import minimize
         rig = self.rig
+        body_sdf = self.body_sdf if flap else self.body_only
         ua, fa, pw = f"upperArm_{side}", f"forearm_{side}", f"paw_{side}"
         target = np.asarray(target, float)
         aim = None if aim is None else np.asarray(aim, float) / np.linalg.norm(aim)
@@ -376,7 +378,7 @@ class ArmSolver:
             P = (W[:, 0:1] * (Vl[0] @ Rs[0].T + Hs[0]) + W[:, 1:2] * (Vl[1] @ Rs[1].T + Hs[1])
                  + W[:, 2:3] * (Vl[2] @ Rs[2].T + Hs[2]))
             pb = (P[far_rest] - Hc) @ Rc + hc_rest
-            e += np.sum(np.maximum(margin - self.body_sdf(pb), 0.0) ** 2) / 0.003 ** 2
+            e += np.sum(np.maximum(margin - body_sdf(pb), 0.0) ** 2) / 0.003 ** 2
             ph = (P - Hh) @ Rh + hh_rest
             near = ph[:, 2] > 0.36
             if near.any():

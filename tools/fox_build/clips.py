@@ -93,7 +93,8 @@ def get_solver(rig: Rig):
         parts = {p.name: p for p in model.build_parts() if p.name in ("Arm_L", "Arm_R")}
         flap_sdf = parametric.scarf_flap_sdf()     # arms pass in front of the hanging flap
         _SOLVER[key] = ArmSolver(rig, {"L": parts["Arm_L"], "R": parts["Arm_R"]},
-                                 lambda p: np.minimum(shapes.body_sdf(p), flap_sdf(p)), shapes.head_sdf)
+                                 lambda p: np.minimum(shapes.body_sdf(p), flap_sdf(p)), shapes.head_sdf,
+                                 body_only=shapes.body_sdf)
     return _SOLVER[key]
 
 
@@ -697,16 +698,23 @@ def make_clips(rig: Rig):
                       exit_ov, meta=dict(priority=4, interruptible=False, lookAt=0.0)))
 
     # ---- Type (loop): paws tap a floating keyboard (spec.keyboard) at chest height
-    def typing_pose(xl, zl, xr, zr):
-        p = stand.copy()
-        p.add("head", x=12).add("neck", x=4)
-        p.set("ear_L", x=6, y=-4); p.set("ear_R", x=6, y=4)
-        L.arm(p, "L", (xl, -0.252, zl), aim=(-0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
-        L.arm(p, "R", (xr, -0.252, zr), aim=(0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0))
-        return both_fingers(p, 40, 26)
-    DOWN, UP = 0.272, 0.300
-    tp = [typing_pose(0.072, DOWN, -0.072, UP), typing_pose(0.080, UP, -0.060, DOWN),
-          typing_pose(0.092, DOWN, -0.085, UP), typing_pose(0.060, UP, -0.078, DOWN)]
+    # one solved pose over the keys (the forearms press the scarf flap aside: FlapGuard drapes it);
+    # the taps are small shoulder / elbow / wrist offsets on top, so the arms never re-solve
+    tb = stand.copy()
+    tb.add("head", x=12).add("neck", x=4)
+    tb.set("ear_L", x=6, y=-4); tb.set("ear_R", x=6, y=4)
+    for s, sx in (("L", 1), ("R", -1)):
+        L.arm(tb, s, (sx * 0.078, -0.252, 0.288), aim=(-sx * 0.15, -0.55, -0.35), palm=(0.0, 0.0, -1.0), flap=False)
+    both_fingers(tb, 40, 26)
+    def typing_pose(sl, dl, sr, dr):
+        """s*: sideways step along the keys (deg, + = outward); d*: 1 = key pressed, 0 = lifted."""
+        p = tb.copy()
+        for side, sx, st, dn in (("L", 1, sl, dl), ("R", -1, sr, dr)):
+            p.add(f"upperArm_{side}", z=sx * st)
+            p.add(f"forearm_{side}", x=6.0 * dn - 3.0)
+            p.add(f"paw_{side}", x=14.0 * dn - 7.0)
+        return p
+    tp = [typing_pose(0, 1, 2, 0), typing_pose(2, 0, -1, 1), typing_pose(4, 1, 3, 0), typing_pose(-2, 0, 1, 1)]
     keys = [(i * 0.15, tp[i % 4]) for i in range(8)] + [(1.2, tp[0])]
     def type_ov(t, p):
         breathe(t, p, rate=1.25, amt=0.4)
