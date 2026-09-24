@@ -24,11 +24,12 @@ def head_colors(V, N):
     ax = np.abs(x)
     front = S.smoothstep(0.02, -0.06, y)
     # white face mask: eye patches + muzzle + lower face
-    e_eye = ((ax - 0.136) / 0.114) ** 2 + ((z - 0.600) / 0.090) ** 2
+    ex, ez = P["eye_xz"]
+    e_eye = ((ax - ex - 0.017) / 0.118) ** 2 + ((z - ez - 0.010) / 0.092) ** 2
     m_eye = S.smoothstep(1.25, 0.85, e_eye)
-    e_muz = (x / 0.115) ** 2 + ((z - 0.532) / 0.062) ** 2
+    e_muz = (x / 0.115) ** 2 + ((z - P["mouth_xz"][1] + 0.003) / 0.062) ** 2
     m_muz = S.smoothstep(1.3, 0.8, e_muz)
-    m_low = S.smoothstep(0.55, 0.515, z) * S.smoothstep(0.08, -0.02, y)
+    m_low = S.smoothstep(0.545, 0.510, z) * S.smoothstep(0.08, -0.02, y)
     mask = np.maximum(np.maximum(m_eye, m_muz), m_low) * front
     col = _mix(cream, white, mask)
     # blush

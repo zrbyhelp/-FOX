@@ -72,17 +72,17 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.172, 0.016, 0.795),
-    "ear_tip": (0.290, 0.040, 1.035),       # ~26 deg out from vertical, like the art
+    "ear_base": (0.176, 0.016, 0.785),
+    "ear_tip": (0.296, 0.040, 1.012),       # ~28 deg out from vertical, like the art
     "ear_base_width": 0.250,                # big, tall rounded-point ears (w/h ~0.93)
     "ear_thickness": 0.078,
     # face anchors (x, z); y is projected onto the head surface at build time
-    "eye_xz": (0.119, 0.590),
-    "eye_size": (0.067, 0.080),               # width, height of the open eye
-    "brow_xz": (0.121, 0.668),
-    "nose_xz": (0.0, 0.567),
-    "mouth_xz": (0.0, 0.535),
-    "blush_xz": (0.176, 0.540),
+    "eye_xz": (0.130, 0.582),                 # big, wide-set, low on the face (chibi)
+    "eye_size": (0.073, 0.087),               # width, height of the open eye
+    "brow_xz": (0.132, 0.662),
+    "nose_xz": (0.0, 0.558),
+    "mouth_xz": (0.0, 0.527),
+    "blush_xz": (0.188, 0.534),
     # body (pear)
     "body_bottom_z": 0.075,
     "body_top_z": 0.47,
@@ -97,7 +97,7 @@ P = {
     "arm_radius": 0.049,                     # half-width at the shoulder (widens to the paw)
     "paw_radius": 0.057,                     # half-width of the paw, the widest part
     "leg_radius": 0.073,
-    "foot_size": (0.130, 0.138, 0.092),      # x width, y length, z height
+    "foot_size": (0.138, 0.146, 0.096),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
     "tail_radius_profile": [(0.0, 0.050), (0.10, 0.095), (0.30, 0.152), (0.52, 0.156),
                             (0.72, 0.124), (0.86, 0.080), (0.95, 0.040), (1.0, 0.0)],

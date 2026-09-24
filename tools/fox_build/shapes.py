@@ -92,8 +92,8 @@ def ear_local(p):
 def head_core(p):
     """Head without ears."""
     q = S.mirror_x(p)
-    skull = S.ellipsoid(p, (0, 0.0, 0.664), (0.288, 0.226, 0.232))     # full, round top
-    cheeks = S.ellipsoid(p, (0, -0.020, 0.562), (0.300, 0.198, 0.158))
+    skull = S.ellipsoid(p, (0, 0.0, 0.656), (0.296, 0.228, 0.206))     # wide, gently domed (mochi)
+    cheeks = S.ellipsoid(p, (0, -0.020, 0.560), (0.312, 0.200, 0.156))
     d = S.smin(skull, cheeks, 0.09)
     muzzle = S.ellipsoid(p, (0, -0.160, 0.547), (0.090, 0.058, 0.055))
     d = S.smin(d, muzzle, 0.06)
@@ -135,12 +135,12 @@ def body_sdf(p):
     into two short thick legs with a rounded notch between them (like the art); the feet are
     separate parts (leg_sdf)."""
     # the pear ends ~0.11 above the floor so the short legs read below it
-    lower = S.ellipsoid(p, (0, 0.012, 0.236), (0.188, 0.168, 0.128))
+    lower = S.ellipsoid(p, (0, 0.012, 0.236), (0.198, 0.170, 0.128))
     upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.138, 0.120, 0.128))
     d = S.smin(lower, upper, 0.12)
     belly = S.ellipsoid(p, (0, -0.044, 0.236), (0.152, 0.132, 0.120))
     d = S.smin(d, belly, 0.05)
-    butt = S.ellipsoid(p, (0, 0.072, 0.200), (0.158, 0.122, 0.100))
+    butt = S.ellipsoid(p, (0, 0.072, 0.200), (0.165, 0.124, 0.100))
     d = S.smin(d, butt, 0.05)
     return S.smin(d, _leg_column(S.mirror_x(p)), 0.050)
 
