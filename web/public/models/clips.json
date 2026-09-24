@@ -19,7 +19,7 @@
   },
   "Wave": {
     "loop": false,
-    "duration": 2.7,
+    "duration": 2.9,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.4,
@@ -29,7 +29,7 @@
   },
   "Happy": {
     "loop": false,
-    "duration": 2.2,
+    "duration": 2.4,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.6,
@@ -39,7 +39,7 @@
   },
   "Heart": {
     "loop": false,
-    "duration": 2.6,
+    "duration": 2.8,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.5,
@@ -49,7 +49,7 @@
   },
   "Present": {
     "loop": false,
-    "duration": 2.5,
+    "duration": 2.6,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.3,
@@ -60,7 +60,7 @@
   },
   "Reach": {
     "loop": false,
-    "duration": 2.5,
+    "duration": 2.6,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.3,
@@ -71,7 +71,7 @@
   },
   "Shrug": {
     "loop": false,
-    "duration": 2.3,
+    "duration": 2.4,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.6,
@@ -119,9 +119,9 @@
   },
   "Jump": {
     "loop": false,
-    "duration": 1.35,
+    "duration": 1.7,
     "priority": 3,
-    "interruptible": true,
+    "interruptible": false,
     "lookAt": 0.3,
     "blink": 1.0,
     "springs": 1.0
@@ -138,6 +138,33 @@
   "LookBack": {
     "loop": false,
     "duration": 2.4,
+    "priority": 2,
+    "interruptible": true,
+    "lookAt": 0.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Enter": {
+    "loop": false,
+    "duration": 3.0,
+    "priority": 4,
+    "interruptible": false,
+    "lookAt": 0.3,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Exit": {
+    "loop": false,
+    "duration": 2.9,
+    "priority": 4,
+    "interruptible": false,
+    "lookAt": 0.0,
+    "blink": 1.0,
+    "springs": 1.0
+  },
+  "Type": {
+    "loop": true,
+    "duration": 1.2,
     "priority": 2,
     "interruptible": true,
     "lookAt": 0.0,

@@ -193,7 +193,7 @@ python3.11 -m venv .venv
 .venv/bin/python tools/build.py         # 首次约 5–10 分钟(手臂求解有缓存,之后几分钟)
 .venv/bin/python tools/validate_glb.py
 .venv/bin/python tools/deform_qa.py
-.venv/bin/python tools/motion_qa.py web/public/models/fox.glb
+.venv/bin/python tools/motion_qa.py           # 检查未压缩的 build/fox.raw.glb
 .venv/bin/python tools/clip_qa.py
 
 # Windows(PowerShell)

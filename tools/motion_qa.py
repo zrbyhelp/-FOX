@@ -34,6 +34,11 @@ def main():
     path = Path(args[0]) if args else C.RAW_GLB
     verbose = "--verbose" in sys.argv
     g = pygltflib.GLTF2().load(str(path))
+    if "EXT_meshopt_compression" in (g.extensionsUsed or []):
+        # pygltflib cannot decode meshopt buffers: measure the uncompressed twin of the build
+        print(f"[motion_qa] {path.name} is meshopt-compressed; checking {C.RAW_GLB.name} instead")
+        path = C.RAW_GLB
+        g = pygltflib.GLTF2().load(str(path))
     blob = g.binary_blob()
     bad_clips = 0
     for an in g.animations:

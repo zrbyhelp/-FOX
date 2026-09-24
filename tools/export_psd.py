@@ -40,7 +40,10 @@ def main():
     for lay in layers:
         if lay.name in ("EyeHappy_L", "EyeHappy_R", "EyeSleep_L", "EyeSleep_R", "Brow_L", "Brow_R", "MouthOpen"):
             lay.visible = False
-    psd = nl.nested_layers_to_psd(layers[::-1], enums.ColorMode.rgb, size=(H, W))   # top layer first
+    # top layer first; raw channels: pytoshop's RLE needs its compiled packbits extension,
+    # which the PyPI wheels for Python 3.11 do not ship
+    psd = nl.nested_layers_to_psd(layers[::-1], enums.ColorMode.rgb, size=(W, H),
+                                  compression=enums.Compression.raw)
     OUT.parent.mkdir(parents=True, exist_ok=True)
     with open(OUT, "wb") as f:
         psd.write(f)
