@@ -4,8 +4,8 @@
     .venv/bin/python tools/build.py --blockout   # capsule stand-ins on the real skeleton
     .venv/bin/python tools/build.py --no-logo --no-blend
 
-Outputs: web/public/models/fox.glb + logo.glb (meshopt-compressed), clips.json,
-models/fox.blend, and uncompressed build/fox.raw.glb + build/logo.raw.glb for validation.
+Outputs: web/public/models/fox.glb (meshopt-compressed), logo.glb, clips.json,
+models/fox.blend, and the uncompressed build/fox.raw.glb used for validation.
 Holds an exclusive lock (.build.lock) so concurrent builds cannot clobber each other.
 """
 from __future__ import annotations
@@ -83,8 +83,9 @@ def build_logo(bpy):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     logo.build(bpy)
     from fox_build import export
-    export.export_glb(bpy, C.RAW_LOGO_GLB, export_animations=False, export_skins=False)
-    export.compress_glb(C.RAW_LOGO_GLB, C.OUT_LOGO_GLB)
+    # Not meshopt-compressed: quantization moves a dequantize scale onto each piece's node,
+    # which the web app overwrites when it animates the pieces (and the file is tiny anyway).
+    export.export_glb(bpy, C.OUT_LOGO_GLB, export_animations=False, export_skins=False)
     print(f"[build] wrote {C.OUT_LOGO_GLB} ({C.OUT_LOGO_GLB.stat().st_size / 1e3:.0f} KB)")
 
 
