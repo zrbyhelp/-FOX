@@ -26,8 +26,9 @@ const META_DEFAULTS = {
   Type: { priority: 1, lookAt: 0.45 },
 };
 
-// Behaviour the web app relies on, whatever clips.json says (Enter / Exit / Jump carry root
-// motion and must play to the end; typing and clicks never cut them off).
+// Behaviour the web app relies on, whatever clips.json says (Jump carries root motion and must
+// play to the end; typing and clicks never cut it off). Enter / Exit clips of older models are
+// never played: the fox pops in and away instead (animator.js).
 const META_FORCED = {
   Enter: { interruptible: false },
   Exit: { interruptible: false },

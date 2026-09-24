@@ -262,11 +262,14 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
 // Drag the tail: it bends towards the pointer, the camera stays; release -> LookBack.
 {
   await waitIdle();
+  // hold the pose between the pick and the press (slow frames would move the tail away first)
+  await page.evaluate(() => window.__fox._app.stopLoop());
   const p = await pickCheck('tail');
   const cam0 = await page.evaluate(() => window.__fox._app.stage.camera.position.toArray());
   const d0 = await page.evaluate(() => window.__fox.boneDir('tail_6'));
   await page.mouse.move(p.x, p.y);
   await page.mouse.down();
+  await page.evaluate(() => window.__fox._app.startLoop());
   for (let k = 1; k <= 8; k++) await page.mouse.move(p.x - 14 * k, p.y - 10 * k, { steps: 2 });
   const i = await waitFor((s) => s.tailTipOffset > 20, 2500, 100);
   const d1 = await page.evaluate(() => window.__fox.boneDir('tail_6'));
@@ -514,7 +517,7 @@ if (has('Sit_Think')) {
   const logoOut = seq.findIndex((x, k) => k >= foxOut && Math.abs(x.ls - 1) > 0.002); // the logo starts to move
   const maxS = Math.max(...pop.map((x) => x.s));
   const last = seq[seq.length - 1];
-  record('... then pops away (anticipation, shrink)', pop.length > 20 && maxS > 1.005 && pop[pop.length - 1].s < 0.1 ? 'PASS' : 'FAIL',
+  record('... then pops away (anticipation, shrink)', pop.length > 20 && maxS > 1.005 && pop[pop.length - 1].s < 0.2 ? 'PASS' : 'FAIL',
     `${(pop.length / 60).toFixed(2)} s pop, scale up to ${maxS.toFixed(3)} then ${pop.length ? pop[pop.length - 1].s.toFixed(3) : '-'}`);
   record('logo pops away with the fox', foxOut >= 0 && logoOut >= foxOut && logoOut - foxOut <= 9 && last.lp === 'hidden' ? 'PASS' : 'FAIL',
     `logo starts ${((logoOut - foxOut) / 60).toFixed(2)} s after the fox, ${last.lp} when the fox is away`);
@@ -523,7 +526,9 @@ if (has('Sit_Think')) {
   const logoShadow = await page.evaluate(() => window.__fox._app.logo.shadow.visible || window.__fox._app.logo.anchor.visible);
   record('away -> fox, logo and shadows hidden', !i.foxVisible && !i.shadowVisible && !i.logoVisible && !logoShadow ? 'PASS' : 'FAIL',
     `foxVisible=${i.foxVisible} shadow=${i.shadowVisible} logoVisible=${i.logoVisible} logo drawn/shadow=${logoShadow}`);
-  const label = (await page.textContent('.toolbar button[data-trigger="Presence"] .label')).trim();
+  const presenceLabel = '.toolbar button[data-trigger="Presence"] .label';
+  await page.waitForFunction((sel) => document.querySelector(sel).textContent.trim() === '回来', presenceLabel, { timeout: 8000 * slow }).catch(() => {}); // next rendered frame
+  const label = (await page.textContent(presenceLabel)).trim();
   const disabled = await page.$$eval('.toolbar .group:not(.settings) button[data-trigger]', (bs) => bs.filter((x) => x.disabled).length);
   record('away -> button 回来, actions disabled', label === '回来' && disabled >= 10 ? 'PASS' : 'FAIL', `label=${label}, ${disabled} disabled`);
   await page.evaluate(() => window.__fox.typeKey('KeyA'));

@@ -85,7 +85,7 @@ async function main() {
   const procedural = new Procedural(fox, { rng });
   const interaction = new Interaction({ canvas, stage, fox, logo, animator, procedural, spec, rng });
   const keyboard = new MagicKeyboard({ spec, scene, rng, reducedMotion });
-  // typing fallback (models without a Type clip): the paws reach for the keyboard's home row
+  // typing fallback (models without a Type clip): the paws reach for the keyboard's near keys
   procedural.setTypingTargets({ L: fox.root.worldToLocal(keyboard.tapPoint('L')), R: fox.root.worldToLocal(keyboard.tapPoint('R')) });
   const heartFx = new HeartFx(scene, fox, { reducedMotion, rng });
   if (debug) {

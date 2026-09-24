@@ -69,7 +69,7 @@ def _ear_shape(q, inner=False):
     the front face (inner=True returns that scoop volume, which head_sdf subtracts and
     parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
     hw = P["ear_base_width"] / 2
-    fz = 0.62                                     # cone flattening front-back
+    fz = 0.74                                     # cone flattening front-back (keeps volume)
     r_tip = 0.025                                 # softly pointed tip
     if inner:
         rim = 0.024                               # cream rim around a big orange scoop
@@ -125,23 +125,24 @@ HEAD_BBOX = ((-0.42, -0.27, 0.36), (0.42, 0.26, 1.07))
 def _leg_column(q):
     """Left leg (use with mirror_x): a short thick column growing out of the belly."""
     hip, knee, ankle, toe = _leg_pts("L")
-    top = np.array([hip[0] + 0.002, -0.004, 0.152])
-    bot = np.array([ankle[0] + 0.002, -0.026, 0.066])
-    return S.round_cone(q, top, bot, P["leg_radius"] * 1.07, P["leg_radius"] * 0.86)
+    top = np.array([hip[0] + 0.004, -0.006, 0.165])
+    bot = np.array([ankle[0] + 0.006, -0.026, 0.068])
+    return S.round_cone(q, top, bot, P["leg_radius"] * 1.05, P["leg_radius"] * 0.90)
 
 
 def body_sdf(p):
     """Pear body with the legs as part of its surface: the lower belly flows in a soft S-curve
     into two short thick legs with a rounded notch between them (like the art); the feet are
     separate parts (leg_sdf)."""
-    lower = S.ellipsoid(p, (0, 0.012, 0.216), (0.174, 0.160, 0.140))
+    # the pear ends ~0.11 above the floor so the short legs read below it
+    lower = S.ellipsoid(p, (0, 0.012, 0.236), (0.172, 0.158, 0.126))
     upper = S.ellipsoid(p, (0, 0.004, 0.352), (0.128, 0.112, 0.128))
     d = S.smin(lower, upper, 0.12)
-    belly = S.ellipsoid(p, (0, -0.042, 0.222), (0.140, 0.125, 0.126))
+    belly = S.ellipsoid(p, (0, -0.042, 0.236), (0.140, 0.125, 0.118))
     d = S.smin(d, belly, 0.05)
-    butt = S.ellipsoid(p, (0, 0.070, 0.178), (0.150, 0.118, 0.106))
+    butt = S.ellipsoid(p, (0, 0.070, 0.200), (0.148, 0.116, 0.098))
     d = S.smin(d, butt, 0.05)
-    return S.smin(d, _leg_column(S.mirror_x(p)), 0.058)
+    return S.smin(d, _leg_column(S.mirror_x(p)), 0.050)
 
 
 BODY_BBOX = ((-0.23, -0.21, -0.005), (0.23, 0.22, 0.50))
@@ -154,8 +155,8 @@ def _arm_pts(side="L"):
     return sh, el, wr, tip
 
 
-ARM_FLAT = 0.76        # arm / paw thickness : width (flattened, not a round tube)
-ARM_WIDEN = 1.22       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
+ARM_FLAT = 0.80        # arm / paw thickness : width (flattened, not a round tube)
+ARM_WIDEN = 1.14       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
 
 
 def arm_sdf(p, side="L"):

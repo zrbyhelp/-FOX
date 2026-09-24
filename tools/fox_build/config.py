@@ -94,10 +94,10 @@ P = {
     "scarf_ring_radius": 0.128,              # centre-line radius of the ring
     "scarf_tube_radius": (0.049, 0.044),     # vertical, radial half-thickness
     # limbs
-    "arm_radius": 0.044,                     # half-width at the shoulder (widens to the paw)
-    "paw_radius": 0.057,                     # half-width of the paw, the widest part
+    "arm_radius": 0.046,                     # half-width at the shoulder (widens to the paw)
+    "paw_radius": 0.055,                     # half-width of the paw, the widest part
     "leg_radius": 0.066,
-    "foot_size": (0.122, 0.132, 0.084),      # x width, y length, z height
+    "foot_size": (0.118, 0.128, 0.088),      # x width, y length, z height
     # tail (see TAIL_SPLINE); radius profile over normalised arc length t in [0,1]
     "tail_radius_profile": [(0.0, 0.048), (0.10, 0.088), (0.32, 0.145), (0.52, 0.140),
                             (0.72, 0.098), (0.86, 0.054), (0.95, 0.020), (1.0, 0.0)],
@@ -124,7 +124,7 @@ TAIL_SPLINE = [
 _A = math.radians(40.0)
 _ARM_DIR = (math.sin(_A), 0.0, -math.cos(_A))
 SHOULDER = (0.118, -0.058, 0.346)      # upperArm pivot (fox's left), front-side of the chest
-ARM_LEN = (0.084, 0.070, 0.052)        # upperArm, forearm, paw: short, thick stubs like the art
+ARM_LEN = (0.072, 0.060, 0.048)        # upperArm, forearm, paw: short stubs like the art
 
 
 def _along(p, d, length):

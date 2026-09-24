@@ -2,9 +2,11 @@
 //
 //   node scripts/mode_test.mjs [--query model=dev/m1.glb] [--url http://localhost:5173/]
 //
-// Checks: the toolbar switch shows the 2D puppet and pauses the 3D scene; toolbar buttons,
-// speech bubbles, the follow toggle and the keyboard drive the 2D fox; ?mode=2d starts in 2D;
-// switching back resumes the 3D fox; no console errors. Screenshots -> ../build/snaps/mode/.
+// Checks: the page load pops the 3D fox in (+ Wave) with its logo; the toolbar switch shows the
+// 2D puppet (popping in + waving the same way, the logo with it) and pauses the 3D scene; toolbar
+// buttons, speech bubbles, the follow toggle and the keyboard drive the 2D fox; 离场 / 回来 take
+// the 2D logo along; ?mode=2d starts in 2D; switching back resumes the 3D fox; no console errors.
+// Screenshots -> ../build/snaps/mode/.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
 import fs from 'node:fs';
@@ -56,11 +58,18 @@ try {
   // ---- switch from 3D ----------------------------------------------------------------------
   const { page, errors } = await open();
   record('starts in 3D', (await page.evaluate(() => window.__fox.mode)) === '3d');
+  const intro = await page.evaluate(() => window.__fox.info());
+  record('3D page load pops in + waves, logo with it', intro.state === 'Entering' && intro.presence === 'popIn' && intro.intent === 'Intro' && intro.clip !== 'Enter' && intro.logoPresence === 'in',
+    `${intro.state}/${intro.clip}/${intro.intent} presence=${intro.presence} logo=${intro.logoPresence}`);
   const seg2d = page.locator('.mode-switch .seg[data-mode="2d"]');
   record('switch present', (await seg2d.count()) === 1);
   await seg2d.click();
   const shown = await waitFor(page, () => window.__fox.mode === '2d' && window.__fox.live2d?.state);
   record('2D shown after click', shown);
+  const start2d = await page.evaluate(() => window.__fox.live2d.debug.info());
+  record('2D start pops in + waves, logo with it', start2d.state === 'Entering' && start2d.clip === 'Wave' && start2d.intent === 'Intro' && ['in', 'shown'].includes(start2d.logoPresence),
+    `${start2d.state}/${start2d.clip}/${start2d.intent} presence=${start2d.presence} logo=${start2d.logoPresence}`);
+  await page.waitForFunction(() => window.__fox.live2d.state !== 'Entering', null, { timeout: 30000 }).catch(() => {});
   const vis = await page.evaluate(() => ({
     canvas3d: getComputedStyle(document.getElementById('stage')).visibility,
     stage2d: !document.querySelector('.stage2d').hidden,
@@ -106,13 +115,20 @@ try {
   // presence button -> Exit / Enter in 2D
   await page.waitForFunction(() => window.__fox.live2d.state !== 'Typing', null, { timeout: 30000 }).catch(() => {});
   await page.locator('button[data-trigger="Presence"]').click();
+  const leaving = await page.evaluate(() => { const i = window.__fox.live2d.debug.info(); return `${i.state}/${i.clip}/${i.intent}`; });
+  record('离场 in 2D waves goodbye', leaving === 'Exiting/Wave/Exit', leaving);
   const away = await waitFor(page, () => window.__fox.live2d.state === 'Away', null, 30000);
-  record('离场 -> Away in 2D', away);
+  const awayInfo = await page.evaluate(() => window.__fox.live2d.debug.info());
+  record('离场 -> Away in 2D, logo gone too', away && awayInfo.hidden && awayInfo.logoPresence === 'hidden' && !awayInfo.logoVisible, `${awayInfo.state} hidden=${awayInfo.hidden} logo=${awayInfo.logoPresence}`);
+  await page.screenshot({ path: path.join(outDir, '2d_away.png') });
   const label = await page.locator('button[data-trigger="Presence"] .label').textContent();
   record('presence button reads 回来', label === '回来', label);
   await page.locator('button[data-trigger="Presence"]').click();
-  const back = await waitFor(page, () => ['Entering', 'Idle', 'OneShot'].includes(window.__fox.live2d.state), null, 30000);
-  record('回来 -> Enter in 2D', back, await page.evaluate(() => window.__fox.live2d.state));
+  const enter2d = await page.evaluate(() => window.__fox.live2d.debug.info());
+  record('回来 -> pop in + Wave in 2D, logo with it', enter2d.state === 'Entering' && enter2d.clip === 'Wave' && enter2d.intent === 'Enter' && enter2d.presence === 'popIn' && enter2d.logoPresence === 'in',
+    `${enter2d.state}/${enter2d.clip}/${enter2d.intent} presence=${enter2d.presence} logo=${enter2d.logoPresence}`);
+  const back = await waitFor(page, () => ['Idle', 'OneShot'].includes(window.__fox.live2d.state) && window.__fox.live2d.debug.info().logoPresence === 'shown', null, 30000);
+  record('回来 -> settles in 2D, logo back', back, await page.evaluate(() => window.__fox.live2d.state));
 
   // back to 3D
   await page.locator('.mode-switch .seg[data-mode="3d"]').click();
@@ -138,6 +154,8 @@ try {
   // ---- ?mode=2d start -----------------------------------------------------------------------
   const p2 = await open('mode=2d');
   record('?mode=2d starts in 2D', (await p2.page.evaluate(() => window.__fox.mode)) === '2d');
+  const s2 = await p2.page.evaluate(() => window.__fox.live2d.debug.info());
+  record('?mode=2d start pops in + waves', s2.state === 'Entering' && s2.clip === 'Wave' && s2.intent === 'Intro', `${s2.state}/${s2.clip}/${s2.intent} presence=${s2.presence}`);
   await sleep(2000);
   await p2.page.screenshot({ path: path.join(outDir, '2d_start.png') });
   record('no console errors (?mode=2d)', p2.errors.length === 0, p2.errors.slice(0, 3).join(' | '));

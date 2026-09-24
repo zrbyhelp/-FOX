@@ -67,7 +67,7 @@ def head_weights(V):
 def _leg_share(V):
     """How much of the body surface is leg (the legs grow out of the belly): 0 on the torso and
     the crotch centre line, 1 on the lower leg."""
-    return S.smoothstep(0.150, 0.100, V[:, 2]) * S.smoothstep(0.014, 0.046, np.abs(V[:, 0]))
+    return S.smoothstep(0.160, 0.112, V[:, 2]) * S.smoothstep(0.014, 0.046, np.abs(V[:, 0]))
 
 
 def body_colors(V, N):
@@ -77,8 +77,8 @@ def body_colors(V, N):
     col = _mix(np.tile(cream, (len(V), 1)), white, 0.45 * belly)
     # legs: airbrushed orange fading in toward the ankles (the feet are fully orange)
     leg = S.smoothstep(0.012, 0.040, np.abs(x))
-    col = _mix(col, C.linear("orange_light"), leg * S.smoothstep(0.128, 0.068, z))
-    return _mix(col, C.linear("orange"), 0.75 * leg * S.smoothstep(0.086, 0.040, z))
+    col = _mix(col, C.linear("orange_light"), leg * S.smoothstep(0.124, 0.074, z))
+    return _mix(col, C.linear("orange"), 0.7 * leg * S.smoothstep(0.090, 0.050, z))
 
 
 def body_weights(V):

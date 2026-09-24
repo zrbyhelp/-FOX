@@ -50,7 +50,11 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   fill.position.set(2.2, 1.2, 1.6);
   const rim = new THREE.DirectionalLight(0xffffff, 1.1); // back rim for the velvet silhouette
   rim.position.set(0.6, 1.9, -2.6);
-  scene.add(fill, rim);
+  // warm bounce from the floor / the body below: keeps the chin, the underside of the paws and
+  // the lower belly light and creamy (the art has no grey crescents under the head)
+  const bounce = new THREE.DirectionalLight(0xffeedd, 0.55);
+  bounce.position.set(0.3, -1.2, 2.0);
+  scene.add(fill, rim, bounce);
 
   const ground = new THREE.Mesh(
     new THREE.PlaneGeometry(14, 14).rotateX(-Math.PI / 2),

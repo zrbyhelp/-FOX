@@ -38,7 +38,7 @@ const FLICK = [0, 1.2, 2.6, 4, 5.2, 6.2]; // rad/s angular kick per link (hover 
 const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle travelling wave
 
 // Typing fallback (no Type clip): the arms reach forward so the paw tips hover just above the
-// keyboard's home row (solved from the rest pose, see setTypingTargets), and each key taps.
+// keyboard's top (solved from the rest pose, see setTypingTargets), and each key taps.
 const ARM_LIFT = { upperArm: -16 * DEG, inward: 0, forearm: -34 * DEG, paw: 14 * DEG }; // until solved
 const TAP = { forearm: 22 * DEG, paw: -12 * DEG };
 const TAP_HOVER = 0.008; // paw tip rest height above the keycaps
@@ -256,7 +256,7 @@ export class Procedural {
       if (!up || !fore || !paw) continue;
       const at = (o) => fox.root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
       const [S, E, W] = [at(up), at(fore), at(paw)];
-      const child = paw.children.find((c) => c.isBone);
+      const child = paw.children.find((c) => c.isBone && /finger/i.test(c.name));
       const F = child ? at(child) : W.clone().sub(E).setLength(0.05).add(W); // no finger bone: extend the forearm
       this.armRest[side] = { S, E, W, F };
     }
@@ -361,7 +361,7 @@ export class Procedural {
   }
 
   /**
-   * Typing fallback: where each paw taps ({L, R}, model space: the keyboard's home row). Solves
+   * Typing fallback: where each paw taps ({L, R}, model space, on the keyboard's top). Solves
    * once, from the rest pose, how far the upper arm swings forward and in, and the forearm and
    * paw bend, so the paw tip hovers just above that point.
    */

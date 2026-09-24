@@ -77,7 +77,7 @@ const POINTER_IDLE = 5; // s without pointer movement before the look-at target 
 const TYPE_IDLE = 1.8; // s without keys before the keyboard goes away
 const LOGO_IN_DELAY = 0.15; // s the logo pops in after the fox
 const LOGO_OUT_DELAY = 0.06; // s the logo pops away after the fox
-const EXPR_OMEGA = 7; // expression params ease (critically damped): swaps take >= ~0.3 s
+const EXPR_OMEGA = 6; // expression params ease (critically damped): a layer swap takes >= ~0.3 s
 const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
 
 const CLIPS = ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp', 'Idle', 'SitDown', 'Idle_LookAround'];
@@ -182,7 +182,7 @@ export async function createLive2DApp({
     tailHoldW: new Critical(0, 14),
     blink: { in: 2.5 + rng() * 3.5, t: -1, double: false },
     // eased expression params (the motions' eye-smile / brow / mouth swaps never snap)
-    expr: { ParamEyeSmile: new Critical(0, EXPR_OMEGA), ParamBrowL: new Critical(0, EXPR_OMEGA), ParamBrowR: new Critical(0, EXPR_OMEGA), ParamMouthOpen: new Critical(0, EXPR_OMEGA + 2) },
+    expr: { ParamEyeSmile: new Critical(0, EXPR_OMEGA), ParamBrowL: new Critical(0, EXPR_OMEGA), ParamBrowR: new Critical(0, EXPR_OMEGA), ParamMouthOpen: new Critical(0, EXPR_OMEGA) },
     earFlick: { L: -1, R: -1, amp: { L: 1, R: 1 } },
     earTwitchIn: 5 + rng() * 5,
     nodT: -1,
@@ -625,6 +625,7 @@ export async function createLive2DApp({
     const pr = c.presence;
     if (pr.mode === 'popIn') p.ParamScale = Math.max(0.001, easeOutBack(Math.min(1, pr.t / POP_IN)));
     else if (pr.mode === 'popOut') p.ParamScale = Math.max(0.001, 1 - easeInBack(Math.min(1, pr.t / POP_OUT)));
+    else if (pr.mode === 'hidden') p.ParamScale = 0.001;
     for (const k in overrides) p[k] = overrides[k];
   }
 
