@@ -4,8 +4,10 @@
 //   node scripts/live2d_test.mjs                    # starts its own Vite dev server
 //   node scripts/live2d_test.mjs --out ../build/snaps/live2d --url http://localhost:5173/
 //
-// 1. loads the page and checks there are no console errors / warnings
-// 2. poses every motion (deterministic fixed-step simulation) and screenshots a mid-frame
+// 1. loads the page and checks there are no console errors / warnings; the start pops in + waves
+// 2. poses every motion (deterministic fixed-step simulation) and screenshots a mid-frame;
+//    离场 / 回来 pop away / in with the logo; calm talking mouth, eased expressions; the bigger
+//    keyboard under the typing paws
 // 3. real-time pointer tests: click head -> Happy, drag head -> Pet -> Heart on release,
 //    hover logo -> Present, click logo -> Reach + logo activation, double-click -> Jump,
 //    click tail -> LookBack, click ear -> ear flick, drag tail, typing keys -> Typing + keyboard
@@ -79,6 +81,9 @@ try {
   const hasAll = await page.evaluate(() => ['Wave', 'Happy', 'Heart', 'Present', 'Reach', 'Shrug', 'Jump', 'Sit_Think', 'Sit_Doze', 'Pet', 'LookBack', 'Enter', 'Exit', 'Type', 'StandUp']
     .filter((n) => !window.__live2d.has(n)));
   check('has() every spec clip', hasAll.length === 0, hasAll.join(','));
+  const intro = await info();
+  check('start pops in + waves, the logo with it', intro.state === 'Entering' && intro.clip === 'Wave' && intro.intent === 'Intro'
+    && ['popIn', 'shown'].includes(intro.presence) && ['in', 'shown'].includes(intro.logoPresence), intro);
   await page.waitForTimeout(1500); // intro pop + wave running live
   await shot('00_intro_live');
 
@@ -102,34 +107,94 @@ try {
     ['Sit_Think', 2.2, 'Sitting', 'Sit_Think'],
     ['Sit_Doze', 4.0, 'Sitting', 'Sit_Doze'],
     ['Type', 1.0, 'Typing', 'Type'],
-    ['Exit', 2.2, 'Exiting', 'Exit'],
+    ['Exit', 1.2, 'Exiting', 'Wave'], // the goodbye wave
   ];
   for (const [clip, t, state, expect] of motions) {
-    const r = await page.evaluate(([c, tt]) => { const d = window.__live2d.debug; d.pose(c, tt); const i = d.info(); return { state: i.state, clip: i.clip, heart: i.heartsShown, keyboard: i.keyboard, z: i.dozeZ, logo: i.logo }; }, [clip, t]);
+    const r = await page.evaluate(([c, tt]) => {
+      const d = window.__live2d.debug;
+      d.pose(c, tt);
+      const i = d.info();
+      return { state: i.state, clip: i.clip, intent: i.intent, heart: i.heartsShown, keyboard: i.keyboard, z: i.dozeZ, logo: i.logo, kbw: i.keyboardWidth, keys: i.keyArea, paws: i.paws };
+    }, [clip, t]);
     let ok = r.state === state && r.clip === expect;
     if (clip === 'Heart') ok = ok && r.heart > 0;
     if (clip === 'Type') ok = ok && r.keyboard !== 'hidden';
     if (clip === 'Sit_Doze') ok = ok && r.z;
     if (clip === 'Reach') ok = ok && r.logo !== 'idle';
-    check(`motion ${clip} @${t}s`, ok, r);
+    if (clip === 'Exit') ok = ok && r.intent === 'Exit';
+    check(`motion ${clip} @${t}s`, ok, { state: r.state, clip: r.clip, intent: r.intent });
+    if (clip === 'Type') {
+      // the keyboard is ~1.4x the first design (0.46 wide) and both paws land on its keys
+      const [x0, y0, x1, y1] = r.keys;
+      const onKeys = r.paws.every(([x, y]) => x > x0 && x < x1 && y > y0 && y < y1);
+      check('bigger 2D keyboard under the typing paws', r.kbw > 0.6 && onKeys, { width: +r.kbw.toFixed(3), keys: r.keys.map((v) => +v.toFixed(3)), paws: r.paws.map((q) => q.map((v) => +v.toFixed(3))) });
+    }
     await shot(`motion_${clip}`);
   }
-  // Enter: exit first (fox hidden = Away), then hop back in
+  // 离场: wave goodbye, then pop away (a little anticipation, then shrink) with the logo -> Away,
+  // fox + logo hidden, the logo not clickable; 回来: pop in + Wave, the logo a beat later -> Idle
+  {
+    const logoAt = await page.evaluate(() => { const d = window.__live2d.debug; d.pose('Idle', 0.1); return d.clientPos('logo'); });
+    const r = await page.evaluate(() => {
+      const d = window.__live2d.debug;
+      d.pose('Exit', 1.2);
+      const tr = d.trace(1.8, ['ParamScale']).ParamScale; // the wave ends at ~2.25 s, 0.6 s pop
+      const away = d.info();
+      return { maxScale: Math.max(...tr), minScale: Math.min(...tr), away: { state: away.state, hidden: away.hidden, logo: away.logoPresence, logoVisible: away.logoVisible } };
+    });
+    check('Exit: goodbye wave, then pops away', r.away.state === 'Away' && r.away.hidden && r.maxScale > 1.005 && r.minScale < 0.01, r);
+    check('logo pops away with the fox, hidden while away', r.away.logo === 'hidden' && !r.away.logoVisible, r.away);
+    const hit = await page.evaluate(([x, y]) => window.__live2d.debug.partAt(x, y), [logoAt.x, logoAt.y]);
+    check('away: logo not hoverable / clickable', hit === null, hit);
+    await shot('motion_Away');
+    const e = await page.evaluate(() => {
+      const d = window.__live2d.debug;
+      window.__live2d.request('Enter');
+      const first = d.info();
+      d.advance(0.4);
+      const mid = d.info();
+      return {
+        first: { state: first.state, clip: first.clip, intent: first.intent, presence: first.presence },
+        mid: { presence: mid.presence, scale: +mid.scale.toFixed(3), logo: mid.logoPresence, logoScale: +mid.logoScale.toFixed(3) },
+      };
+    });
+    check('Enter pops in + waves (no hopping)', e.first.state === 'Entering' && e.first.clip === 'Wave' && e.first.intent === 'Enter' && e.first.presence === 'popIn', e.first);
+    check('Enter: fox + logo mid-pop', e.mid.presence === 'popIn' && e.mid.scale > 0.3 && e.mid.scale < 1.2 && e.mid.logo === 'in' && e.mid.logoScale > 0.05, e.mid);
+    await shot('motion_Enter_pop');
+    const done = await page.evaluate(() => { const i = window.__live2d.debug.advance(3); return { state: i.state, logo: i.logoPresence, logoScale: i.logoScale }; });
+    check('Enter settles to Idle, logo back', done.state === 'Idle' && done.logo === 'shown' && done.logoScale === 1, done);
+  }
+  // talking: calm eased syllables (~2-2.5 open / close per second, closed rests); eased eye smile
   {
     const r = await page.evaluate(() => {
       const d = window.__live2d.debug;
-      d.pose('Exit', 3.1);
-      const away = d.info();
-      window.__live2d.request('Enter');
-      d.advance(0.8);
-      const mid = d.info();
-      return { away: away.state, hidden: away.hidden, mid: mid.state, clip: mid.clip };
+      d.pose('Idle', 0.2);
+      window.__live2d.setTalking(true);
+      const m = d.trace(6, ['ParamMouthOpen']).ParamMouthOpen;
+      window.__live2d.setTalking(false);
+      d.pose('Idle', 0.2);
+      window.__live2d.request('Happy');
+      const smile = d.trace(1.2, ['ParamEyeSmile']).ParamEyeSmile;
+      return { m, smile };
     });
-    check('Exit -> Away (hidden)', r.away === 'Away' && r.hidden, r);
-    check('Enter hops back in', r.mid === 'Entering' && r.clip === 'Enter', r);
-    await shot('motion_Enter');
-    const done = await page.evaluate(() => { window.__live2d.debug.advance(3); return window.__live2d.debug.info().state; });
-    check('Enter settles to Idle', done === 'Idle', done);
+    const o = r.m.slice(30);
+    let cycles = 0;
+    let maxStep = 0;
+    let run = 0;
+    let rest = 0;
+    for (let k = 1; k < o.length; k++) {
+      if (o[k - 1] < 0.3 && o[k] >= 0.3) cycles++;
+      maxStep = Math.max(maxStep, Math.abs(o[k] - o[k - 1]));
+      run = o[k] < 0.03 ? run + 1 : 0;
+      rest = Math.max(rest, run / 60);
+    }
+    const rate = cycles / (o.length / 60);
+    check('talk: calm eased mouth (~2-2.5 Hz, rests)', rate >= 1.5 && rate <= 2.8 && maxStep < 0.2 && rest >= 0.25,
+      { perSecond: +rate.toFixed(2), maxStepPerFrame: +maxStep.toFixed(3), longestRest: +rest.toFixed(2) });
+    // the eye layers swap between smile 0.3 and 0.85: that must take >= 0.3 s
+    const a = r.smile.findIndex((v) => v > 0.3);
+    const b = r.smile.findIndex((v) => v > 0.85);
+    check('eye smile swap eased >= 0.3 s', a >= 0 && b > a && (b - a) / 60 >= 0.3, { swapSeconds: +((b - a) / 60).toFixed(2) });
   }
   // StandUp from sitting, then the queued Wave
   {

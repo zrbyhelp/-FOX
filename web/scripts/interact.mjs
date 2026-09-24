@@ -8,11 +8,13 @@
 // never as FAIL. Exits non-zero if any check FAILs.
 import { chromium } from 'playwright';
 import { spawn } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const webDir = path.resolve(here, '..');
+const spec = JSON.parse(fs.readFileSync(path.resolve(webDir, '../spec.json'), 'utf8'));
 const args = process.argv.slice(2);
 const opt = (k, d) => { const i = args.indexOf(k); return i < 0 ? d : args[i + 1]; };
 const query = opt('--query', '');
@@ -104,12 +106,14 @@ const logoSource = (await info()).logoSource;
 console.log(`clips: ${clips.join(', ')}\nlogo: ${logoSource}\nframe time: ${frameMs.toFixed(0)} ms`);
 await page.mouse.move(5, 5); // park the pointer away from the fox
 
-// Intro: hop in (Enter) or pop-in + Wave, greeting bubble, then Idle.
+// Intro: pops in out of thin air and waves (never a hop-in Enter clip, even when the model has
+// one), the logo pops in with it; greeting bubble, then Idle.
 {
-  const { clip, state, presence } = introInfo;
-  if (has('Enter')) record('intro plays Enter', clip === 'Enter' && state === 'Entering' ? 'PASS' : 'FAIL', `clip=${clip} state=${state}`);
-  else if (has('Wave')) record('intro plays Enter', clip === 'Wave' && presence === 'popIn' ? 'SKIP' : 'FAIL', `Enter missing, fallback pop-in + ${clip} (presence=${presence})`);
-  else record('intro plays Enter', 'SKIP', 'Enter and Wave missing');
+  const { clip, state, presence, intent, foxScale, logoPresence, logoScale } = introInfo;
+  const note = has('Enter') ? ' (model has an Enter clip: unused)' : '';
+  if (has('Wave')) record('intro pops in + Wave', state === 'Entering' && presence === 'popIn' && clip === 'Wave' && intent === 'Intro' ? 'PASS' : 'FAIL', `clip=${clip} intent=${intent} presence=${presence} scale=${foxScale.toFixed(2)}${note}`);
+  else record('intro pops in + Wave', state === 'Entering' && presence === 'popIn' ? 'SKIP' : 'FAIL', `Wave missing: pop-in only (presence=${presence})`);
+  record('intro: logo pops in with the fox', logoPresence === 'in' && logoScale < 1 ? 'PASS' : 'FAIL', `logo ${logoPresence} scale=${logoScale.toFixed(2)}`);
   const g = await waitFor((s) => s.bubble === '你好呀!我是小狐狸~' || s.bubblesShown > 0, 5000);
   record('intro greeting bubble', g.bubble === '你好呀!我是小狐狸~' ? 'PASS' : 'FAIL', `bubble=${g.bubble}`);
   const j = await waitIdle();
@@ -141,6 +145,69 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
     await sleep(50);
   }
   record('bubble -> mouth talks', talking ? 'PASS' : 'SKIP', talking ? `mouth open up to ${open.toFixed(2)}` : 'clip keeps its own mouth (open mouth or sleep eyes)');
+}
+
+// Calm face, measured in fixed 60 Hz steps (software GL renders only a few fps): the talking
+// mouth opens ~2-2.5 times a second with eased edges and closed rests between phrases; a blink
+// takes ~0.2 s; even a hard cut between expressions eases over >= 0.3 s.
+{
+  await waitIdle();
+  const r = await page.evaluate(() => {
+    const app = window.__fox._app;
+    const { bubble, procedural, animator } = app;
+    const b = app.fox.bones;
+    app.stopLoop();
+    bubble.clear();
+    bubble.update(0.3);
+    bubble.say('我们一起慢慢地说说话吧', { duration: 30, cooldown: 0 });
+    bubble.update(0);
+    const talking = bubble.talking;
+    const open = [];
+    for (let i = 0; i < 6 * 60; i++) { app.step(1 / 60); open.push(procedural.talkOpen); }
+    bubble.clear();
+    for (let i = 0; i < 30; i++) app.step(1 / 60);
+    // one blink
+    procedural.blinkIn = 99;
+    procedural.blinkT = 0;
+    procedural.blinkDouble = false;
+    let blink = 0;
+    for (let i = 0; i < 40; i++) { app.step(1 / 60); if (b.eyeOpen_L && b.eyeOpen_L.scale.y < 0.99) blink += 1 / 60; }
+    procedural.blinkIn = 3;
+    // hard cut (no crossfade) to a clip with the happy eyes
+    const happyClip = ['Pet', 'Happy'].find((n) => animator.has(n));
+    const happy = [];
+    if (happyClip && b.eyeHappy_L) {
+      animator.play(happyClip, 0, 'test');
+      for (let i = 0; i < 50; i++) { app.step(1 / 60); happy.push(b.eyeHappy_L.scale.x); }
+      animator.toIdle(0);
+    }
+    for (let i = 0; i < 30; i++) app.step(1 / 60);
+    app.startLoop();
+    return { talking, open, blink, happy, happyClip };
+  });
+  const o = r.open.slice(30); // after the ramp-in
+  let cycles = 0;
+  let maxStep = 0;
+  let run = 0;
+  let rest = 0;
+  for (let k = 1; k < o.length; k++) {
+    if (o[k - 1] < 0.35 && o[k] >= 0.35) cycles++;
+    maxStep = Math.max(maxStep, Math.abs(o[k] - o[k - 1]));
+    run = o[k] < 0.03 ? run + 1 : 0;
+    rest = Math.max(rest, run / 60);
+  }
+  const rate = cycles / (o.length / 60);
+  record('talk: calm eased mouth (~2-2.5 Hz, rests)', r.talking && rate >= 1.5 && rate <= 2.8 && maxStep < 0.25 && rest >= 0.25 ? 'PASS' : 'FAIL',
+    `${rate.toFixed(2)} open/close per s, max step ${maxStep.toFixed(3)}/frame, longest closed rest ${rest.toFixed(2)} s`);
+  record('blink ~0.18-0.22 s', r.blink >= 0.15 && r.blink <= 0.25 ? 'PASS' : 'FAIL', `eyes closing for ${r.blink.toFixed(3)} s`);
+  if (r.happyClip && r.happy.length) {
+    const t5 = r.happy.findIndex((v) => v > 0.05);
+    const t95 = r.happy.findIndex((v) => v > 0.95);
+    const steps = r.happy.map((v, k) => (k ? Math.abs(v - r.happy[k - 1]) : 0));
+    const span = (t95 - t5) / 60;
+    record('expression swap eases >= 0.3 s (hard cut)', t5 >= 0 && t95 > t5 && span >= 0.28 && Math.max(...steps) < 0.15 ? 'PASS' : 'FAIL',
+      `happy eyes 5%->95% in ${span.toFixed(2)} s after a cut to ${r.happyClip}, max step ${Math.max(...steps).toFixed(3)}/frame`);
+  } else record('expression swap eases >= 0.3 s (hard cut)', 'SKIP', 'no happy-eye clip / bone');
 }
 
 // Double-click -> Jump (not Happy).
@@ -319,12 +386,58 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
   for (const c of codes) { await page.evaluate((x) => window.__fox.typeKey(x), c); await sleep(90); }
   const i = await waitFor((s) => s.keyboard === 'shown' || s.keyboard === 'in', 2000, 50);
   record('typing -> magic keyboard appears', ['in', 'shown'].includes(i.keyboard) ? 'PASS' : 'FAIL', `keyboard=${i.keyboard} scale=${i.keyboardScale.toFixed(2)}`);
+  const want = spec.keyboard.gltf.size;
+  const px = await page.evaluate(() => {
+    // on-screen width of the keyboard base (its 4 top corners projected)
+    const app = window.__fox._app;
+    const kb = app.keyboard;
+    const r = app.stage.renderer.domElement.getBoundingClientRect();
+    const xs = [-1, 1].flatMap((sx) => [-1, 1].map((sz) => {
+      const v = kb.home.clone().set((sx * kb.size.W) / 2, kb.size.H / 2, (sz * kb.size.D) / 2);
+      kb.tilt.localToWorld(v).project(app.stage.camera);
+      return ((v.x + 1) / 2) * r.width;
+    }));
+    return Math.max(...xs) - Math.min(...xs);
+  });
+  record('keyboard built at the spec size (bigger)', i.keyboardSize.every((v, k) => Math.abs(v - want[k]) < 1e-6) && px > 200 ? 'PASS' : 'FAIL',
+    `size ${i.keyboardSize.join(' x ')} (spec ${want.join(' x ')}), ${px.toFixed(0)} px wide on screen`);
   record('typing -> state Typing', i.state === 'Typing' ? 'PASS' : 'FAIL', `state=${i.state}`);
   if (has('Type')) record('typing -> Type clip', i.clip === 'Type' ? 'PASS' : 'FAIL', `clip=${i.clip}`);
   else record('typing -> Type clip', 'SKIP', `Type missing, fallback: ${i.clip} + procedural paw taps`);
   record('keystrokes press keycaps', i.keyPresses >= codes.length ? 'PASS' : 'FAIL', `${i.keyPresses} presses, ${i.keystrokes} keystrokes`);
   const tb = await waitFor((s) => s.bubble === '我来帮你一起打字!', 1500, 50);
   record('typing -> bubble', tb.bubble === '我来帮你一起打字!' ? 'PASS' : 'FAIL', `bubble=${tb.bubble}`);
+  // The fox's body (everything but the arms, whose paws type on it) stays clear of the keyboard.
+  await waitFor((s) => s.keyboard === 'shown', 3000, 50);
+  const clear = await page.evaluate(() => {
+    const app = window.__fox._app;
+    const kb = app.keyboard;
+    const { W, H, D } = kb.size;
+    const v = kb.home.clone();
+    app.fox.root.updateMatrixWorld(true);
+    kb.group.updateMatrixWorld(true);
+    let inside = 0;
+    let gap = Infinity;
+    let n = 0;
+    const where = [];
+    for (const m of app.fox.meshes) {
+      if (/^Arm/.test(m.name) || !m.visible) continue;
+      const pos = m.geometry.attributes.position;
+      for (let k = 0; k < pos.count; k++) {
+        m.getVertexPosition(k, v);
+        kb.body.worldToLocal(v.applyMatrix4(m.matrixWorld));
+        n++;
+        if (Math.abs(v.x) > W / 2 || Math.abs(v.y) > H / 2 + 0.012) continue; // beside / above / below the slab + caps
+        if (Math.abs(v.z) < D / 2) { inside++; if (where.length < 3) where.push(`${m.name}`); } else if (v.z < 0) gap = Math.min(gap, -D / 2 - v.z);
+      }
+    }
+    return { inside, gap, n, where };
+  });
+  record('keyboard clear of the fox body', clear.inside === 0 ? 'PASS' : 'FAIL',
+    `${clear.inside} of ${clear.n} body vertices inside the keyboard${clear.where.length ? ' (' + clear.where.join(' ') + ')' : ''}, closest ${(clear.gap * 1000).toFixed(1)} mm behind it`);
+  const reach = await page.evaluate(() => window.__fox._app.procedural.armReach);
+  record('fallback paws aim at the keyboard top', reach && reach.L < 0.005 && reach.R < 0.005 ? 'PASS' : 'FAIL',
+    `solved paw tips ${reach ? `${(reach.L * 1000).toFixed(1)} / ${(reach.R * 1000).toFixed(1)} mm` : '-'} from the near-row tap points`);
   const j = await waitFor((s) => s.keyboard === 'hidden' && s.state === 'Idle', 6000, 100);
   record('no keys for 1.8 s -> keyboard gone + Idle', j.keyboard === 'hidden' && j.state === 'Idle' ? 'PASS' : 'FAIL', `keyboard=${j.keyboard} state=${j.state}`);
 }
@@ -373,39 +486,78 @@ if (has('Sit_Think')) {
   record('typing demo ends by itself', !j.typing && j.keyboard === 'hidden' ? 'PASS' : 'FAIL', `typing=${j.typing} keyboard=${j.keyboard}`);
 }
 
-// 离场 -> Exit -> Away (fox hidden); 回来 -> Enter -> Idle.
+// 离场 -> goodbye Wave, then pops away (never an Exit clip), the logo with it -> Away: fox, logo
+// and shadows hidden, the logo cannot be hovered or clicked; 回来 -> the same pop-in + Wave as the
+// page load, the logo a beat later -> Idle. The pops are stepped at a fixed 60 Hz.
 {
   await waitIdle();
+  const logoAt = await pickCheck('logo');
   await page.click('.toolbar button[data-trigger="Presence"]');
-  if (has('Exit')) await expectClip('toolbar 离场 -> Exit', 'Exit');
-  else {
-    const e = await waitFor((s) => s.state === 'Exiting', 2000, 50);
-    record('toolbar 离场 -> Exit', e.state === 'Exiting' ? 'SKIP' : 'FAIL', `Exit missing, fallback ${e.clip} + shrink (state=${e.state})`);
-  }
+  const e = await info();
+  if (has('Wave')) record('toolbar 离场 -> goodbye Wave', e.state === 'Exiting' && e.clip === 'Wave' && e.intent === 'Exit' ? 'PASS' : 'FAIL', `clip=${e.clip} intent=${e.intent} state=${e.state}${has('Exit') ? ' (model has an Exit clip: unused)' : ''}`);
+  else record('toolbar 离场 -> goodbye Wave', e.state === 'Exiting' ? 'SKIP' : 'FAIL', `Wave missing: pop away only (state=${e.state})`);
   const b = await waitFor((s) => s.bubble === '拜拜~下次见!', 2500, 50);
   record('exit -> goodbye bubble', b.bubble === '拜拜~下次见!' ? 'PASS' : 'FAIL', `bubble=${b.bubble}`);
+  const seq = await page.evaluate(() => {
+    const app = window.__fox._app;
+    app.stopLoop();
+    const out = [];
+    for (let k = 0; k < 60 * 8 && app.animator.state !== 'Away'; k++) {
+      app.step(1 / 60);
+      out.push({ p: app.animator.presence.mode, s: app.fox.root.scale.x, lp: app.logo.presence, ls: app.logo.scale, clip: app.animator.clip });
+    }
+    app.startLoop();
+    return out;
+  });
+  const pop = seq.filter((x) => x.p === 'popOut');
+  const foxOut = seq.findIndex((x) => x.p === 'popOut');
+  const logoOut = seq.findIndex((x, k) => k >= foxOut && Math.abs(x.ls - 1) > 0.002); // the logo starts to move
+  const maxS = Math.max(...pop.map((x) => x.s));
+  const last = seq[seq.length - 1];
+  record('... then pops away (anticipation, shrink)', pop.length > 20 && maxS > 1.005 && pop[pop.length - 1].s < 0.1 ? 'PASS' : 'FAIL',
+    `${(pop.length / 60).toFixed(2)} s pop, scale up to ${maxS.toFixed(3)} then ${pop.length ? pop[pop.length - 1].s.toFixed(3) : '-'}`);
+  record('logo pops away with the fox', foxOut >= 0 && logoOut >= foxOut && logoOut - foxOut <= 9 && last.lp === 'hidden' ? 'PASS' : 'FAIL',
+    `logo starts ${((logoOut - foxOut) / 60).toFixed(2)} s after the fox, ${last.lp} when the fox is away`);
   const i = await waitFor((s) => s.state === 'Away', 12000, 100);
   record('exit -> state Away', i.state === 'Away' ? 'PASS' : 'FAIL', `state=${i.state}`);
-  record('away -> fox and shadow hidden', !i.foxVisible && !i.shadowVisible ? 'PASS' : 'FAIL', `foxVisible=${i.foxVisible} shadow=${i.shadowVisible}`);
+  const logoShadow = await page.evaluate(() => window.__fox._app.logo.shadow.visible || window.__fox._app.logo.anchor.visible);
+  record('away -> fox, logo and shadows hidden', !i.foxVisible && !i.shadowVisible && !i.logoVisible && !logoShadow ? 'PASS' : 'FAIL',
+    `foxVisible=${i.foxVisible} shadow=${i.shadowVisible} logoVisible=${i.logoVisible} logo drawn/shadow=${logoShadow}`);
   const label = (await page.textContent('.toolbar button[data-trigger="Presence"] .label')).trim();
   const disabled = await page.$$eval('.toolbar .group:not(.settings) button[data-trigger]', (bs) => bs.filter((x) => x.disabled).length);
   record('away -> button 回来, actions disabled', label === '回来' && disabled >= 10 ? 'PASS' : 'FAIL', `label=${label}, ${disabled} disabled`);
   await page.evaluate(() => window.__fox.typeKey('KeyA'));
   const pv = await pos('head');
   const picked = await page.evaluate(({ x, y }) => window.__fox.pickAt(x, y), pv);
+  const pickedLogo = await page.evaluate(({ x, y }) => window.__fox.pickAt(x, y), logoAt);
+  await page.mouse.move(logoAt.x, logoAt.y, { steps: 2 });
+  await page.mouse.click(logoAt.x, logoAt.y);
   await sleep(300);
   const t = await info();
   record('away -> typing and clicks ignored', !t.typing && t.keyboard === 'hidden' && picked !== 'head' && t.state === 'Away' ? 'PASS' : 'FAIL', `typing=${t.typing} pick=${picked} state=${t.state}`);
+  record('away -> logo hover / click ignored', pickedLogo === null && t.logo === 'idle' && t.state === 'Away' && !t.logoVisible ? 'PASS' : 'FAIL', `pick at the logo=${pickedLogo} logo=${t.logo} state=${t.state}`);
+  await page.mouse.move(5, 5);
+  await page.evaluate(() => window.__fox._app.stopLoop()); // step the pop-in ourselves
   await page.click('.toolbar button[data-trigger="Presence"]');
-  if (has('Enter')) await expectClip('toolbar 回来 -> Enter', 'Enter');
-  else {
-    const e = await waitFor((s) => s.state === 'Entering', 2000, 50);
-    record('toolbar 回来 -> Enter', e.state === 'Entering' && e.presence === 'popIn' ? 'SKIP' : 'FAIL', `Enter missing, fallback pop-in + ${e.clip}`);
-  }
+  const en = await page.evaluate(() => {
+    const app = window.__fox._app;
+    const first = { state: app.animator.state, clip: app.animator.clip, intent: app.animator.intent, p: app.animator.presence.mode };
+    for (let k = 0; k < 24; k++) app.step(1 / 60); // 0.4 s: mid-pop
+    const mid = { s: app.fox.root.scale.x, lp: app.logo.presence, ls: app.logo.scale, p: app.animator.presence.mode };
+    app.startLoop();
+    return { first, mid };
+  });
+  if (has('Wave')) record('toolbar 回来 -> pop in + Wave', en.first.state === 'Entering' && en.first.p === 'popIn' && en.first.clip === 'Wave' && en.first.intent === 'Enter' ? 'PASS' : 'FAIL', `clip=${en.first.clip} intent=${en.first.intent} presence=${en.first.p}${has('Enter') ? ' (model has an Enter clip: unused)' : ''}`);
+  else record('toolbar 回来 -> pop in + Wave', en.first.state === 'Entering' && en.first.p === 'popIn' ? 'SKIP' : 'FAIL', `Wave missing: pop-in only`);
+  record('回来: fox + logo mid-pop', en.mid.p === 'popIn' && en.mid.s > 0.3 && en.mid.s < 1.2 && en.mid.lp === 'in' && en.mid.ls > 0.05 ? 'PASS' : 'FAIL',
+    `0.4 s in: fox scale ${en.mid.s.toFixed(2)}, logo ${en.mid.lp} ${en.mid.ls.toFixed(2)}`);
   const w = await waitFor((s) => s.bubble === '我回来啦!', 3000, 50);
   record('enter -> bubble', w.bubble === '我回来啦!' ? 'PASS' : 'FAIL', `bubble=${w.bubble}`);
   const j = await waitIdle();
-  record('回来 -> back to Idle, visible', j.state === 'Idle' && j.foxVisible && j.shadowVisible ? 'PASS' : 'FAIL', `state=${j.state} visible=${j.foxVisible}`);
+  record('回来 -> back to Idle, fox + logo visible', j.state === 'Idle' && j.foxVisible && j.shadowVisible && j.logoVisible && j.logoPresence === 'shown' ? 'PASS' : 'FAIL', `state=${j.state} visible=${j.foxVisible} logo=${j.logoPresence}`);
+  const lp = await pos('logo');
+  const lpick = await page.evaluate(({ x, y }) => window.__fox.pickAt(x, y), lp);
+  record('logo pickable again', lpick === 'logo' ? 'PASS' : 'FAIL', `pick=${lpick}`);
   const label2 = (await page.textContent('.toolbar button[data-trigger="Presence"] .label')).trim();
   record('button back to 离场', label2 === '离场' ? 'PASS' : 'FAIL', `label=${label2}`);
 }
