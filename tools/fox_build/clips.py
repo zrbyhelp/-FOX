@@ -645,7 +645,8 @@ def make_clips(rig: Rig):
     doze = L.sit(lean=2)
     doze.add("neck", x=7, y=-4).add("head", x=12, y=-12, z=-5)
     L.paw_chest(doze, "L", low=True)
-    L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016)  # room to nod
+    L.arm(doze, "R", (-0.104, -0.236, 0.340), aim=(0.30, -0.30, 1.0), head_margin=0.016,   # room to nod
+          margin=0.0)                               # resting on the chest, not sinking into it
     doze.expression(eyes="sleep")
     doze.set("ear_L", x=-12, y=6); doze.set("ear_R", x=-12, y=-6)
     def doze_ov(t, p):

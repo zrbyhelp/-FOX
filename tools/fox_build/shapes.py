@@ -155,8 +155,8 @@ def _arm_pts(side="L"):
 
 ARM_FLAT = 0.80        # arm / paw thickness : width (flattened, not a round tube)
 ARM_WIDEN = 1.12       # half-width at the wrist : at the shoulder (the arm widens toward the paw)
-PAW_GROOVE_HW = 0.0045     # finger groove half-width (soft, wide creases like the toes)
-PAW_GROOVE_DEPTH = 0.0042  # finger groove depth (fades in toward the tip)
+PAW_GROOVE_R = 0.0055      # finger groove radius (soft creases like the toes)
+PAW_GROOVE_LIFT = 0.0022   # its centre-line sits this far above the paw surface
 
 
 def arm_sdf(p, side="L"):
@@ -173,12 +173,17 @@ def arm_sdf(p, side="L"):
     pc = L + float((f["centre"] - wr) @ f["y"])
     paw = S.ellipsoid(q, (0, pc, 0), (pr, pr * 1.06, pr * 1.04))
     d = S.smin(d, paw, 0.035)
-    # two soft finger grooves (like the toes): over the back of the paw (+z) and round its tip,
-    # fading in from the middle of the paw and out toward the palm
-    depth = PAW_GROOVE_DEPTH * S.smoothstep(pc, pc + 0.5 * pr, q[:, 1]) * S.smoothstep(-0.55 * pr, -0.15 * pr, q[:, 2])
+    # two soft finger grooves (like the toes): capsules laid along the paw's back (+z) and over
+    # its tip, their centre-lines on the surface (a smooth half-round crease, clean when meshed)
+    ry, rz = pr * 1.06, pr * 1.04
     for gx in (-0.34 * pr, 0.34 * pr):
-        g = np.maximum(np.abs(q[:, 0] - gx) - PAW_GROOVE_HW, -(d + depth))
-        d = S.ssub(d, g, 0.006)
+        c = np.sqrt(1 - (gx / pr) ** 2)             # ellipsoid section at this x
+        lift = 1.0 + PAW_GROOVE_LIFT / pr              # centre-line just above the surface: shallow
+        pts = [(gx, pc + c * ry * v * lift, c * rz * np.sqrt(max(1 - v * v, 0.0)) * lift) for v in (0.30, 0.62, 0.86, 0.99)]
+        g = np.full(len(q), np.inf)
+        for a_, b_ in zip(pts[:-1], pts[1:]):
+            g = np.minimum(g, S.capsule(q, a_, b_, PAW_GROOVE_R))
+        d = S.ssub(d, g, 0.010)
     d = d * ARM_FLAT
     return S.smin(d, S.sphere(p, sh, ar * 1.05), 0.02)  # rounded root at the shoulder pivot
 
