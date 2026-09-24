@@ -13,6 +13,7 @@ import { Animator, POP_IN, POP_OUT } from './animator.js';
 import { Procedural } from './procedural.js';
 import { Interaction } from './interaction.js';
 import { Bubble } from './bubble.js';
+import { Bubble3D } from './bubble3d.js';
 import { MagicKeyboard, TypingController } from './keyboard.js';
 import { HeartFx } from './heartfx.js';
 import { createUI, createLoader } from './ui.js';
@@ -123,10 +124,13 @@ async function main() {
     });
   }
   const insetBottom = () => (ui ? ui.height() + 8 : 0);
+  // speech bubble: a puffy 3D bubble in the scene (the flat DOM one while the 2D puppet is shown)
+  const bubble3d = new Bubble3D({ scene, camera, canvas, reducedMotion });
   const bubble = new Bubble({
     camera, canvas, head: fox.bones.head,
     logoCenter: (v) => (logo.visible ? logo.worldPosition(null, v) : null),
     insetBottom,
+    view3d: bubble3d,
   });
   if (noUI) bubble.enabled = false;
   const typing = new TypingController({ keyboard, animator, procedural, bubble, rng });
@@ -266,8 +270,8 @@ async function main() {
   };
 
   // ---- 3D / 2D switch --------------------------------------------------------------------------
-  // The 2D puppet (src/live2d/app.js) shares the toolbar, the speech bubble (anchored to its head)
-  // and the lines; it listens to the keyboard itself while shown. Only one fox runs at a time.
+  // The 2D puppet (src/live2d/app.js) shares the toolbar, the speech bubble logic (the DOM bubble,
+  // anchored to its head) and the lines; it listens to the keyboard itself while shown. Only one fox runs at a time.
   const stage2d = document.createElement('div');
   stage2d.className = 'stage2d';
   stage2d.hidden = true;
@@ -379,10 +383,12 @@ async function main() {
   logo.update(0);
   keyboard.group.visible = keyboard.shadow.visible = true;
   heartFx.group.visible = true;
+  bubble3d.warm(true);
   await renderer.compileAsync(scene, camera);
   renderer.render(scene, camera);
   keyboard.group.visible = keyboard.shadow.visible = false;
   heartFx.group.visible = false;
+  bubble3d.warm(false);
   dozeFx.clear();
   noteFx.clear();
 
