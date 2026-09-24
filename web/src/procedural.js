@@ -1,5 +1,6 @@
-// Procedural layer applied after mixer.update(): look-at, blink, talking mouth, ear twitch,
-// tail chain physics (with drag / flick), scarf springs, typing paws and keystroke nods.
+// Procedural layer applied after mixer.update(): look-at, expression easing, blink, talking
+// mouth, ear twitch, tail chain physics (with drag / flick), scarf springs, typing paws and
+// keystroke nods.
 //
 // All offsets are applied as world-space rotations about each bone's pivot, so bone roll in the
 // rig does not matter. The mixer only writes a bone when its animated value CHANGES, so before
@@ -7,6 +8,7 @@
 // mixer update (never the rest pose: that would erase poses a clip is holding still). Nothing
 // here ever accumulates from frame to frame.
 import * as THREE from 'three';
+import { TalkRhythm } from './talk.js';
 
 const DEG = Math.PI / 180;
 const YAW_MAX = 50 * DEG;
@@ -35,9 +37,22 @@ const DRAG_GAIN = 1.6;
 const FLICK = [0, 1.2, 2.6, 4, 5.2, 6.2]; // rad/s angular kick per link (hover flick)
 const SWAY_AMP = [0.8, 1.3, 1.8, 2.3, 2.7, 3.1].map((d) => d * DEG); // idle travelling wave
 
-// Typing fallback (no Type clip): lift the forearms towards the keyboard and tap.
-const ARM_LIFT = { upperArm: -16 * DEG, forearm: -34 * DEG, paw: 14 * DEG };
+// Typing fallback (no Type clip): the arms reach forward so the paw tips hover just above the
+// keyboard's home row (solved from the rest pose, see setTypingTargets), and each key taps.
+const ARM_LIFT = { upperArm: -16 * DEG, inward: 0, forearm: -34 * DEG, paw: 14 * DEG }; // until solved
 const TAP = { forearm: 22 * DEG, paw: -12 * DEG };
+const TAP_HOVER = 0.008; // paw tip rest height above the keycaps
+
+// Expressions (spec.expressions: hidden = uniform scale 0.001, visible = 1). However a clip
+// switches a feature (a step, a short crossfade), it eases in / out over ~0.35 s: a critically
+// damped follower of the animated visibility, shaped by a smoothstep.
+const EXPRESSIONS = ['eyeOpen_L', 'eyeOpen_R', 'eyeHappy_L', 'eyeHappy_R', 'eyeSleep_L', 'eyeSleep_R', 'brow_L', 'brow_R', 'mouthSmile', 'mouthOpen'];
+const EXPR_OMEGA = 11;
+const HIDDEN = 0.001;
+
+// Blink: eased close (40 %) and open, ~0.2 s; sometimes a double blink.
+const BLINK = 0.2;
+const BLINK_GAP = 0.1;
 
 const _v = new THREE.Vector3();
 const _v2 = new THREE.Vector3();
@@ -150,6 +165,58 @@ class Kinematics {
   }
 }
 
+/**
+ * Typing fallback pose for one arm (rest joints S shoulder, E elbow, W wrist, F paw tip; model
+ * space, character forward +Z, left +X), rotations as updateTypingArms applies them: the upper
+ * arm swings forward (about +X) and in (about +Z), the forearm and the paw bend about +X. A
+ * coarse-to-fine grid search puts the wrist behind and above `target` (the paw ~45 deg down),
+ * then the paw aims its tip TAP_HOVER above the target. `side` = +1 left, -1 right.
+ */
+function solveArm({ S, E, W, F }, target, side) {
+  const X = new THREE.Vector3(1, 0, 0);
+  const Z = new THREE.Vector3(0, 0, 1);
+  const pawLen = F.distanceTo(W);
+  const tip = target.clone().add(new THREE.Vector3(0, TAP_HOVER, 0));
+  const wrist = tip.clone().add(new THREE.Vector3(0, pawLen * 0.7, -pawLen * 0.7));
+  const q = new THREE.Quaternion();
+  const qx = new THREE.Quaternion();
+  const e = new THREE.Vector3();
+  const w = new THREE.Vector3();
+  const f = new THREE.Vector3();
+  const pose = (a, b, c) => {
+    q.setFromAxisAngle(Z, -side * b).multiply(qx.setFromAxisAngle(X, a));
+    e.copy(E).sub(S).applyQuaternion(q).add(S);
+    w.copy(W).sub(S).applyQuaternion(q).add(S).sub(e).applyAxisAngle(X, c).add(e);
+    f.copy(F).sub(S).applyQuaternion(q).add(S).sub(e).applyAxisAngle(X, c).add(e);
+  };
+  const cost = (a, b, c) => {
+    pose(a, b, c);
+    return w.distanceToSquared(wrist) + 2e-5 * (a * a + b * b + c * c); // prefer small bends
+  };
+  let best = { a: ARM_LIFT.upperArm, b: 0, c: ARM_LIFT.forearm, cost: Infinity };
+  const search = (a0, a1, b0, b1, c0, c1, stepDeg) => {
+    const st = stepDeg * DEG;
+    for (let a = a0; a <= a1 + 1e-9; a += st) {
+      for (let b = b0; b <= b1 + 1e-9; b += st) {
+        for (let c = c0; c <= c1 + 1e-9; c += st) {
+          const k = cost(a, b, c);
+          if (k < best.cost) best = { a, b, c, cost: k };
+        }
+      }
+    }
+  };
+  search(-95 * DEG, 5 * DEG, -10 * DEG, 40 * DEG, -110 * DEG, 10 * DEG, 3);
+  const { a, b, c } = best;
+  search(a - 3 * DEG, a + 3 * DEG, b - 3 * DEG, b + 3 * DEG, c - 3 * DEG, c + 3 * DEG, 0.5);
+  pose(best.a, best.b, best.c);
+  // paw: rotating about +X by d turns atan2(y, z) by -d
+  const cur = f.clone().sub(w);
+  const want = tip.clone().sub(w);
+  const d = Math.atan2(cur.y, cur.z) - Math.atan2(want.y, want.z);
+  f.sub(w).applyAxisAngle(X, d).add(w);
+  return { upperArm: best.a, inward: best.b, forearm: best.c, paw: d, error: f.distanceTo(tip) };
+}
+
 export class Procedural {
   constructor(fox, { rng = Math.random } = {}) {
     this.fox = fox;
@@ -161,7 +228,7 @@ export class Procedural {
 
     // Everything we touch, with its rest transform (captured before any animation ran).
     const names = [
-      'neck', 'head', 'ear_L', 'ear_R', 'eyeOpen_L', 'eyeOpen_R', 'mouthOpen', 'mouthSmile', 'scarfFlap_1', 'scarfFlap_2',
+      'neck', 'head', 'ear_L', 'ear_R', ...EXPRESSIONS, 'scarfFlap_1', 'scarfFlap_2',
       'upperArm_L', 'upperArm_R', 'forearm_L', 'forearm_R', 'paw_L', 'paw_R', ...TAIL,
     ];
     this.rest = names.filter((n) => this.b[n]).map((n) => ({
@@ -180,18 +247,34 @@ export class Procedural {
     const head = this.b.head;
     this.eyeLocal = head ? head.worldToLocal(head.getWorldPosition(new THREE.Vector3()).add(new THREE.Vector3(0, 0.15, 0.05))) : null;
 
+    // Rest arm chain in model space (typing fallback solve): shoulder, elbow, wrist, paw tip.
+    this.armRest = {};
+    for (const side of ['L', 'R']) {
+      const [up, fore, paw] = ['upperArm', 'forearm', 'paw'].map((n) => this.b[`${n}_${side}`]);
+      if (!up || !fore || !paw) continue;
+      const at = (o) => fox.root.worldToLocal(o.getWorldPosition(new THREE.Vector3()));
+      const [S, E, W] = [at(up), at(fore), at(paw)];
+      const child = paw.children.find((c) => c.isBone);
+      const F = child ? at(child) : W.clone().sub(E).setLength(0.05).add(W); // no finger bone: extend the forearm
+      this.armRest[side] = { S, E, W, F };
+    }
+    this.armLift = { L: ARM_LIFT, R: ARM_LIFT };
+    this.armReach = null; // solved paw tip distance from its target (m), per side
+
     this.target = null; // Vector3 or null
     this.look = { yaw: { x: 0, v: 0 }, pitch: { x: 0, v: 0 }, w: { x: 0, v: 0 } };
     this.lookActive = false;
 
-    this.blinkIn = 2 + rng() * 3;
+    this.expr = EXPRESSIONS.filter((n) => this.b[n]).map((n) => ({ bone: this.b[n], s: { x: 0, v: 0 }, init: false }));
+
+    this.blinkIn = 2.5 + rng() * 3.5;
     this.blinkT = -1;
     this.blinkDouble = false;
 
-    // Talking (speech bubble): mouthOpen / mouthSmile toggled in a syllable rhythm.
+    // Talking (speech bubble): the mouth opens in a calm syllable rhythm (talk.js).
     this.talk = false;
     this.talkEnv = { x: 0, v: 0 };
-    this.syl = { t: 0, dur: 0.14, open: 0.55 };
+    this.rhythm = new TalkRhythm(rng);
     this.talkOpen = 0; // current mouth-open amount (for tests)
 
     this.ears = { L: [new Spring(22, 0.22), new Spring(18, 0.3)], R: [new Spring(22, 0.22), new Spring(18, 0.3)] };
@@ -246,6 +329,8 @@ export class Procedural {
     this.lookActive = false;
     this.blinkT = -1;
     this.talkEnv.x = this.talkEnv.v = 0;
+    this.rhythm.reset();
+    for (const e of this.expr) e.init = false; // snap to the clip's expression on the next frame
     this.resetTail();
   }
 
@@ -271,6 +356,22 @@ export class Procedural {
   tapPaw(side) {
     const s = this.taps[side];
     if (s) s.v += 20;
+  }
+
+  /**
+   * Typing fallback: where each paw taps ({L, R}, model space: the keyboard's home row). Solves
+   * once, from the rest pose, how far the upper arm swings forward and in, and the forearm and
+   * paw bend, so the paw tip hovers just above that point.
+   */
+  setTypingTargets(targets) {
+    this.armReach = {};
+    for (const side of ['L', 'R']) {
+      const rest = this.armRest[side];
+      if (!rest || !targets[side]) continue;
+      const lift = solveArm(rest, targets[side], side === 'L' ? 1 : -1);
+      this.armLift[side] = lift;
+      this.armReach[side] = lift.error;
+    }
   }
 
   update(dt, layers) {
@@ -299,6 +400,7 @@ export class Procedural {
 
     this.updateLook(dt, layers.lookAt, charQ);
     this.updateNod(steps);
+    this.updateExpressions(dt);
     this.updateBlink(dt, layers.blink);
     this.updateTalk(dt);
     this.updateTypingArms(dt, steps, charQ);
@@ -370,6 +472,25 @@ export class Procedural {
     rotateWorld(head, _q.setFromAxisAngle(_axis, -THREE.MathUtils.clamp(s.x, -0.25, 0.25)));
   }
 
+  // ---- expressions ------------------------------------------------------------------------------
+
+  /** Ease every expression feature towards the visibility the clip gives it (EXPR_OMEGA). */
+  updateExpressions(dt) {
+    for (const e of this.expr) {
+      const target = THREE.MathUtils.clamp((e.bone.scale.x - HIDDEN) / (1 - HIDDEN), 0, 1);
+      if (!e.init) {
+        e.s.x = target;
+        e.s.v = 0;
+        e.init = true;
+      }
+      critDamp(e.s, target, EXPR_OMEGA, dt);
+      const k = smoothstep(0, 1, e.s.x);
+      if (Math.abs(k - target) < 1e-4) continue;
+      e.bone.scale.setScalar(HIDDEN + (1 - HIDDEN) * k);
+      e.bone.updateMatrixWorld(true);
+    }
+  }
+
   // ---- blink ----------------------------------------------------------------------------------
 
   updateBlink(dt, weight) {
@@ -380,19 +501,18 @@ export class Procedural {
       if (this.blinkIn <= 0 && this.blinkT < 0) {
         this.blinkT = 0;
         this.blinkDouble = this.rng() < 0.2;
-        this.blinkIn = 2 + this.rng() * 3;
+        this.blinkIn = 2.5 + this.rng() * 3.5;
       }
     }
     if (this.blinkT < 0) return;
     this.blinkT += dt;
-    const dur = 0.12;
-    const total = this.blinkDouble ? dur * 2 + 0.08 : dur;
+    const total = this.blinkDouble ? BLINK * 2 + BLINK_GAP : BLINK;
     if (this.blinkT >= total) { this.blinkT = -1; return; }
     let t = this.blinkT;
-    if (this.blinkDouble && t > dur) t = Math.max(0, t - dur - 0.08);
-    const s = Math.min(1, t / dur);
-    // quick close (40%), slower open
-    const closed = s < 0.4 ? s / 0.4 : 1 - (s - 0.4) / 0.6;
+    if (this.blinkDouble && t > BLINK) t = Math.max(0, t - BLINK - BLINK_GAP);
+    const s = Math.min(1, t / BLINK);
+    // eased close (40%), slower eased open
+    const closed = s < 0.4 ? smoothstep(0, 0.4, s) : 1 - smoothstep(0.4, 1, s);
     const k = 1 - 0.9 * closed * weight;
     for (const e of eyes) {
       if (e.scale.y > 0.5) { // only while the open eyes are the visible set
@@ -405,9 +525,10 @@ export class Procedural {
   // ---- talking mouth ------------------------------------------------------------------------
 
   /**
-   * While a speech bubble is up, alternate mouthOpen / mouthSmile (spec.expressions: hidden =
-   * uniform scale 0.001, visible = 1) in a ~7 Hz syllable rhythm with eased edges. Skipped when
-   * the clip already shows the open mouth or the sleeping eyes.
+   * While a speech bubble is up, open the mouth in calm eased syllables (talk.js: ~2-2.5 per
+   * second, closed rests between phrases): mouthOpen grows from its pivot as mouthSmile shrinks
+   * (spec.expressions: hidden = uniform scale 0.001). Skipped when the clip already shows the
+   * open mouth or the sleeping eyes.
    */
   updateTalk(dt) {
     const { mouthOpen: mo, mouthSmile: ms, eyeSleep_L: sleep } = this.b;
@@ -415,27 +536,17 @@ export class Procedural {
     const clipOpen = mo.scale.x > 0.5;
     const asleep = !!sleep && sleep.scale.x > 0.5;
     const want = this.talk && !clipOpen && !asleep && ms.scale.x > 0.5;
-    critDamp(this.talkEnv, want ? 1 : 0, want ? 18 : 26, dt);
+    critDamp(this.talkEnv, want ? 1 : 0, want ? 9 : 12, dt);
     const env = this.talkEnv.x;
     if (env < 0.01 || clipOpen || asleep) {
       this.talkOpen = 0;
+      if (!want) this.rhythm.reset(); // the next bubble starts a fresh phrase
       return;
     }
-    const y = this.syl;
-    y.t += dt;
-    while (y.t >= y.dur) {
-      y.t -= y.dur;
-      y.dur = 1 / (6 + 2.2 * this.rng()); // ~7 syllables per second
-      y.open = 0.45 + 0.25 * this.rng();
-    }
-    const u = y.t / y.dur;
-    // open for the first `open` fraction of the syllable, with eased edges (~20 ms)
-    const edge = Math.min(0.2, 0.025 / y.dur);
-    const o = env * smoothstep(0, edge, u) * (1 - smoothstep(y.open - edge, y.open, u));
+    const o = env * this.rhythm.step(dt);
     this.talkOpen = o;
-    const H = 0.001;
-    mo.scale.setScalar(H + (1 - H) * o);
-    ms.scale.setScalar(H + (1 - H) * (1 - o));
+    mo.scale.setScalar(Math.max(mo.scale.x, HIDDEN + (1 - HIDDEN) * o));
+    ms.scale.setScalar(Math.max(HIDDEN, ms.scale.x * (1 - o)));
     mo.updateMatrixWorld(true);
     ms.updateMatrixWorld(true);
   }
@@ -449,12 +560,17 @@ export class Procedural {
     const w = this.typeArm.x;
     if (w < 1e-3) return;
     const right = _v3.set(1, 0, 0).applyQuaternion(charQ);
+    const fwd = _v2.set(0, 0, 1).applyQuaternion(charQ);
     for (const side of ['L', 'R']) {
       const tap = THREE.MathUtils.clamp(T[side].x, -0.3, 1.2);
-      for (const [part, lift, tapAmt] of [['upperArm', ARM_LIFT.upperArm, 0], ['forearm', ARM_LIFT.forearm, TAP.forearm], ['paw', ARM_LIFT.paw, TAP.paw]]) {
+      const lift = this.armLift[side];
+      const inward = (side === 'L' ? -1 : 1) * lift.inward; // towards the body's midline
+      const up = this.b[`upperArm_${side}`];
+      if (up) rotateWorld(up, _q.setFromAxisAngle(fwd, w * inward).multiply(_q2.setFromAxisAngle(right, w * lift.upperArm)));
+      for (const [part, angle, tapAmt] of [['forearm', lift.forearm, TAP.forearm], ['paw', lift.paw, TAP.paw]]) {
         const bone = this.b[`${part}_${side}`];
         if (!bone) continue;
-        rotateWorld(bone, _q.setFromAxisAngle(right, w * (lift + tap * tapAmt)));
+        rotateWorld(bone, _q.setFromAxisAngle(right, w * (angle + tap * tapAmt)));
       }
     }
   }

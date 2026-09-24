@@ -2,9 +2,11 @@
 // Crossfades are driven here (not with mixer fades) so the weights always sum to 1 and the
 // bind pose never leaks in, even when a fade is interrupted by another one.
 //
-// Presence (visible / popping in / shrinking away / hidden) is owned here too, so a missing
-// Enter / Exit clip degrades to the scale pop-in / fade-out with exactly the same state flow;
-// main.js only turns `presence` into the fox's scale and visibility.
+// Presence (visible / popping in / popping away / hidden) is owned here too. The fox always
+// arrives the same way (page load, 回来, 2D start): it pops in out of thin air and waves; it
+// leaves as the mirror image: waves goodbye, then pops away. Enter / Exit clips, if a model still
+// has them, are never played. main.js turns `presence` into the fox's scale and visibility and
+// sends the logo along ('presence' events).
 import * as THREE from 'three';
 
 // Graceful substitutes when the model lacks a clip.
@@ -21,8 +23,8 @@ const FALLBACK = {
 const FADE = 0.3;
 const FADE_IDLE = 0.35;
 const FADE_PET = 0.45;
-export const POP_IN = 0.8; // s, fallback entrance (scale pop)
-export const FADE_OUT = 0.6; // s, fallback exit (scale down)
+export const POP_IN = 0.8; // s, entrance: scale 0 -> 1 with a springy overshoot (easeOutBack)
+export const POP_OUT = 0.6; // s, exit: a little anticipation, then scale -> 0 (easeInBack)
 
 const audible = (a) => (a.isScheduled() ? a.getEffectiveWeight() : 0);
 const smooth = (x) => x * x * (3 - 2 * x);
@@ -50,9 +52,9 @@ export class Animator {
     this.lookAroundIn = this.nextLookAround();
     this.layers = { lookAt: 1, blink: 1, springs: 1 };
 
-    this.presence = { mode: 'shown', t: 0 }; // shown | popIn | fadeOut | hidden
+    this.presence = { mode: 'shown', t: 0 }; // shown | popIn | popOut | hidden
     this.pendingPresence = null; // 'enter' | 'exit' requested while the other one is playing
-    this.exitStep = null; // Exiting: 'clip' | 'wave' | 'fade'
+    this.exitStep = null; // Exiting: 'wave' | 'pop'
     this.typingWanted = false; // the keyboard is out: type whenever the fox is free
     this.typeRate = 1;
 
@@ -64,7 +66,10 @@ export class Animator {
 
   // ---- events -----------------------------------------------------------------------------
 
-  /** fn(type, detail): 'clip' {clip, intent} whenever a clip starts; 'state' {from, to}. */
+  /**
+   * fn(type, detail): 'clip' {clip, intent} whenever a clip starts; 'state' {from, to};
+   * 'presence' {mode} when the fox starts popping in / away, is shown or hidden.
+   */
   on(fn) {
     this.listeners.add(fn);
     return () => this.listeners.delete(fn);
@@ -391,7 +396,12 @@ export class Animator {
 
   // ---- entrance / exit --------------------------------------------------------------------
 
-  /** Hop in (clip Enter, else pop-in + Wave). `intro` = first appearance on page load. */
+  setPresence(mode) {
+    this.presence = { mode, t: 0 };
+    this.emit('presence', { mode });
+  }
+
+  /** Pop in out of thin air, then Wave. `intro` = first appearance (page load). */
   enter({ intro = false } = {}) {
     if (this.posing) return null;
     if (this.stateName === 'Exiting') { this.pendingPresence = 'enter'; return 'Enter'; }
@@ -404,23 +414,18 @@ export class Animator {
     this.phase = null;
     this.idleTime = 0;
     this.stateName = 'Entering';
-    if (this.has('Enter')) {
-      this.presence = { mode: 'shown', t: 0 };
-      this.play('Enter', 0, intent); // hidden before: nothing to blend from
+    this.setPresence('popIn');
+    const idle = this.idleClip();
+    const wave = this.has('Wave');
+    if (idle) this.play(idle, 0, wave ? idle : intent); // hidden before: nothing to blend from
+    if (wave) {
+      this.play('Wave', FADE, intent);
       this.enterWaits = 'clip';
-    } else {
-      this.presence = { mode: 'popIn', t: 0 };
-      const idle = this.idleClip();
-      if (idle) this.play(idle, 0, this.has('Wave') ? idle : intent);
-      if (this.has('Wave')) {
-        this.play('Wave', FADE, intent);
-        this.enterWaits = 'clip';
-      } else this.enterWaits = 'pop';
-    }
+    } else this.enterWaits = 'pop';
     return 'Enter';
   }
 
-  /** Wave goodbye and leave (clip Exit, else Wave + shrink), then Away. */
+  /** Wave goodbye, then pop away (the mirror of enter()), then Away. */
   exit() {
     if (this.posing || this.stateName === 'Away') return null;
     if (this.stateName === 'Exiting') { this.pendingPresence = null; return 'Exit'; }
@@ -430,7 +435,7 @@ export class Animator {
       this.wake(null);
       return 'Exit';
     }
-    if (this.stateName === 'Entering' || !this.canInterrupt('Exit')) {
+    if (this.stateName === 'Entering' || !this.canInterrupt('Wave')) {
       this.pendingPresence = 'exit'; // e.g. mid-Jump: leave when it lands
       return 'Exit';
     }
@@ -438,19 +443,16 @@ export class Animator {
     this.queued = null;
     this.phase = null;
     this.stateName = 'Exiting';
-    if (this.has('Exit')) {
-      this.exitStep = 'clip';
-      this.play('Exit', FADE);
-    } else if (this.has('Wave')) {
+    if (this.has('Wave')) {
       this.exitStep = 'wave';
       this.play('Wave', FADE, 'Exit');
-    } else this.startFadeOut();
+    } else this.startPopOut();
     return 'Exit';
   }
 
-  startFadeOut() {
-    this.exitStep = 'fade';
-    this.presence = { mode: 'fadeOut', t: 0 };
+  startPopOut() {
+    this.exitStep = 'pop';
+    this.setPresence('popOut');
     const idle = this.idleClip();
     if (idle && this.clip !== idle) this.play(idle, FADE_IDLE); // keep breathing while shrinking
   }
@@ -458,7 +460,7 @@ export class Animator {
   goAway() {
     this.stateName = 'Away';
     this.exitStep = null;
-    this.presence = { mode: 'hidden', t: 0 };
+    this.setPresence('hidden');
     this.queued = null;
     const idle = this.idleClip();
     if (idle) this.play(idle, 0, 'Away'); // hidden: park on the idle loop, no blend needed
@@ -470,9 +472,9 @@ export class Animator {
     const p = this.presence;
     p.t += dt;
     if (p.mode === 'popIn' && p.t >= POP_IN) {
-      p.mode = 'shown';
+      this.setPresence('shown');
       if (this.stateName === 'Entering' && this.enterWaits === 'pop') this.finishEnter();
-    } else if (p.mode === 'fadeOut' && p.t >= FADE_OUT) {
+    } else if (p.mode === 'popOut' && p.t >= POP_OUT) {
       this.goAway();
     }
   }
@@ -527,8 +529,7 @@ export class Animator {
         else this.finishEnter();
         return;
       case 'Exiting':
-        if (this.exitStep === 'clip') this.goAway();
-        else if (this.exitStep === 'wave') this.startFadeOut();
+        if (this.exitStep === 'wave') this.startPopOut();
         return;
       case 'Away':
         return;
@@ -554,13 +555,12 @@ export class Animator {
   /**
    * Start the next transition a fade-length before a one-shot ends, so the outgoing clip is
    * still moving while it blends out (no freeze on the clamped last frame, then a blend).
-   * Exit is exempt: it must reach the edge of the frame before the fox is hidden.
    */
   checkEarlyFinish() {
     const c = this.cur;
     if (!c || c.early || this.fade) return;
     const m = this.meta[c.name];
-    if (m.loop || c.name === 'Exit' || !c.action.isRunning()) return;
+    if (m.loop || !c.action.isRunning()) return;
     const lead = Math.min(FADE_IDLE, m.duration * 0.2);
     if (c.action.time >= m.duration - lead) {
       c.early = true;
@@ -628,7 +628,7 @@ export class Animator {
     this.fade = null;
     this.finished.length = 0;
     this.mixer.stopAllAction();
-    this.presence = { mode: 'shown', t: 0 };
+    this.setPresence('shown');
     const clip = this.has(name) ? name : 'Idle';
     if (!this.has(clip)) return null;
     const meta = this.meta[clip];
@@ -652,7 +652,8 @@ export class Animator {
     this.idleTime = 0;
     this.typingWanted = false;
     this.pendingPresence = null;
-    this.presence = { mode: 'shown', t: 0 };
+    this.exitStep = null;
+    this.setPresence('shown');
     this.toIdle(0);
   }
 }

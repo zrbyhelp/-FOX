@@ -1,6 +1,8 @@
 // Brand logo: 4 cream rounded cubes (diamond) + orange 4-point star.
 // Loads logo.glb when present, otherwise builds an equivalent procedural logo with the same
-// node names (spec.logo.pieces). Handles idle float, hover glow and the "activated" orbit (ref 5).
+// node names (spec.logo.pieces). Handles idle float, hover glow, the "activated" orbit (ref 5)
+// and its presence: it pops in and away together with the fox (main.js) and is hidden (not
+// drawn, not pickable) while the fox is away.
 import * as THREE from 'three';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { createBlobShadow } from './scene.js';
@@ -12,10 +14,14 @@ const ORBIT_R = 0.14; // cube orbit radius when active
 const T_IN = 0.7;
 const T_HOLD = 2.6;
 const T_OUT = 1.0;
+const POP_IN = 0.6; // s, springy scale-in (after the caller's delay), unwinding a small turn
+const POP_OUT = 0.45; // s, anticipation + shrink with a little hop and spin
 
 const smooth = (x) => x * x * (3 - 2 * x);
 const easeInOut = (x) => (x < 0.5 ? 4 * x * x * x : 1 - (-2 * x + 2) ** 3 / 2);
 const easeOutBack = (x, s = 1.9) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
+const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
+const easeOutCubic = (x) => 1 - (1 - x) ** 3;
 
 function starShape(r = 0.058, inner = 0.012) {
   // Concave 4-point star: tips on the axes, sides pulled towards the centre.
@@ -79,8 +85,9 @@ export async function loadLogo({ url, loader, materials }) {
 }
 
 export class Logo {
-  constructor(object, { spec, source }) {
+  constructor(object, { spec, source, reducedMotion = false }) {
     this.source = source;
+    this.reducedMotion = reducedMotion;
     this.anchor = new THREE.Group(); // spec position/scale + facing
     this.anchor.name = 'Logo';
     this.float = new THREE.Group(); // bob + hover lift
@@ -125,7 +132,11 @@ export class Logo {
     this.mode = 'idle'; // idle | activating | active | settling
     this.modeT = 0;
     this.act = 0; // 0 = default layout, 1 = ref-5 layout
-    this.pop = 1;
+    this.presence = 'shown'; // shown | in | out | hidden
+    this.popT = 0; // s into the current pop (negative = still waiting for its delay)
+    this.scale = 1; // pop scale
+    this.spin = 0; // extra turn about the vertical while popping
+    this.hop = 0; // extra lift while popping away
     this._q = new THREE.Quaternion();
     this._e = new THREE.Euler();
   }
@@ -142,6 +153,16 @@ export class Logo {
     return this.mode !== 'idle';
   }
 
+  /** Drawn (possibly still popping in or away). */
+  get visible() {
+    return this.presence !== 'hidden';
+  }
+
+  /** Out or on its way in: hover, clicks and look-at apply. */
+  get shown() {
+    return this.presence === 'shown' || this.presence === 'in';
+  }
+
   setHover(on) {
     this.hoverTarget = on ? 1 : 0;
   }
@@ -155,8 +176,36 @@ export class Logo {
     }
   }
 
-  startPop(delay = 0) {
-    this.pop = -delay / 0.6;
+  /** Pop in from nothing after `delay` s (with the fox's entrance). */
+  popIn(delay = 0) {
+    this.presence = 'in';
+    this.popT = -delay;
+    this.anchor.visible = this.shadow.visible = true;
+  }
+
+  /** Pop away after `delay` s (with the fox's exit), then hidden. */
+  popOut(delay = 0) {
+    if (this.presence === 'hidden' || this.presence === 'out') return;
+    this.presence = 'out';
+    this.popT = -delay;
+    this.hoverTarget = 0;
+  }
+
+  /** Snap to shown / hidden (no animation). Showing leaves a pop-in that is under way alone. */
+  setShown(on) {
+    if (on) {
+      if (this.presence === 'shown' || this.presence === 'in') return;
+      this.presence = 'shown';
+      this.anchor.visible = this.shadow.visible = true;
+    } else {
+      this.presence = 'hidden';
+      this.anchor.visible = this.shadow.visible = false;
+      // comes back calm: no orbit, no glow left over from before it left
+      this.mode = 'idle';
+      this.act = 0;
+      this.phase = 0;
+      this.hover = this.hoverTarget = 0;
+    }
   }
 
   worldPosition(name, target = new THREE.Vector3()) {
@@ -167,7 +216,7 @@ export class Logo {
   update(dt) {
     this.time += dt;
     this.modeT += dt;
-    this.pop = Math.min(1, this.pop + dt / 0.6);
+    this.updatePresence(dt);
     this.hover += (this.hoverTarget - this.hover) * (1 - Math.exp(-dt * 10));
 
     switch (this.mode) {
@@ -199,11 +248,34 @@ export class Logo {
     this.applyLayout();
   }
 
+  updatePresence(dt) {
+    this.popT += dt;
+    const rm = this.reducedMotion;
+    this.spin = this.hop = 0;
+    if (this.presence === 'in') {
+      const x = Math.min(1, Math.max(0, this.popT / POP_IN));
+      this.scale = this.popT <= 0 ? 0 : rm ? x : easeOutBack(x);
+      if (!rm) this.spin = -1.4 * (1 - easeOutCubic(x)); // arrives turning back to face the camera
+      if (x >= 1) this.presence = 'shown';
+    } else if (this.presence === 'out') {
+      const x = Math.min(1, Math.max(0, this.popT / POP_OUT));
+      this.scale = 1 - (rm ? x : easeInBack(x));
+      if (!rm) {
+        this.spin = 2.4 * x * x;
+        this.hop = 0.05 * Math.sin(Math.PI * 0.85 * x);
+      }
+      if (x >= 1) this.setShown(false);
+    } else this.scale = this.presence === 'hidden' ? 0 : 1;
+  }
+
   /** Deterministic still pose for screenshots. */
   pose(state = 'idle') {
     this.time = 0;
     this.hover = this.hoverTarget = 0;
-    this.pop = 1;
+    this.presence = 'shown';
+    this.anchor.visible = this.shadow.visible = true;
+    this.scale = 1;
+    this.spin = this.hop = 0;
     this.mode = state === 'active' ? 'active' : 'idle';
     this.modeT = 0;
     this.act = state === 'active' ? 1 : 0;
@@ -215,9 +287,9 @@ export class Logo {
     const t = this.time;
     const a = this.act;
     const h = this.hover;
-    const popS = this.pop <= 0 ? 0.001 : Math.max(0.001, easeOutBack(this.pop));
-    this.float.position.y = 0.012 * Math.sin(t * 1.1) + 0.022 * h;
-    this.float.rotation.y = 0.12 * Math.sin(t * 0.35);
+    const popS = Math.max(0.001, this.scale);
+    this.float.position.y = 0.012 * Math.sin(t * 1.1) + 0.022 * h + this.hop;
+    this.float.rotation.y = 0.12 * Math.sin(t * 0.35) + this.spin;
     this.float.scale.setScalar(popS * (1 + 0.06 * h + 0.08 * a));
 
     for (const [name, p] of Object.entries(this.pieces)) {

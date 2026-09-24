@@ -9,7 +9,7 @@ import { createStage, createBlobShadow } from './scene.js';
 import { createMaterialLibrary } from './materials.js';
 import { loadFox, makeLoader, DozeFx } from './fox.js';
 import { loadLogo, Logo } from './logo.js';
-import { Animator, POP_IN, FADE_OUT } from './animator.js';
+import { Animator, POP_IN, POP_OUT } from './animator.js';
 import { Procedural } from './procedural.js';
 import { Interaction } from './interaction.js';
 import { Bubble } from './bubble.js';
@@ -30,6 +30,9 @@ const startMode = params.get('mode') === '2d' ? '2d' : '3d';
 
 const easeOutBack = (x, s = 1.7) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
 const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
+// The logo pops in a beat after the fox and pops away just after it (s).
+const LOGO_IN_DELAY = 0.15;
+const LOGO_OUT_DELAY = 0.06;
 
 // Speech bubble lines, keyed by the action the clip was played for (animator intent).
 const LINES = {
@@ -72,7 +75,7 @@ async function main() {
   }
 
   scene.add(fox.root);
-  const logo = new Logo(logoRes.object, { spec, source: logoRes.source });
+  const logo = new Logo(logoRes.object, { spec, source: logoRes.source, reducedMotion });
   logo.addTo(scene);
   const foxShadow = createBlobShadow({ radius: 0.34, opacity: 0.5 });
   scene.add(foxShadow);
@@ -82,6 +85,8 @@ async function main() {
   const procedural = new Procedural(fox, { rng });
   const interaction = new Interaction({ canvas, stage, fox, logo, animator, procedural, spec, rng });
   const keyboard = new MagicKeyboard({ spec, scene, rng, reducedMotion });
+  // typing fallback (models without a Type clip): the paws reach for the keyboard's home row
+  procedural.setTypingTargets({ L: fox.root.worldToLocal(keyboard.tapPoint('L')), R: fox.root.worldToLocal(keyboard.tapPoint('R')) });
   const heartFx = new HeartFx(scene, fox, { reducedMotion, rng });
   if (debug) {
     animator.auto = false;
@@ -117,7 +122,7 @@ async function main() {
   const insetBottom = () => (ui ? ui.height() + 8 : 0);
   const bubble = new Bubble({
     camera, canvas, head: fox.bones.head,
-    logoCenter: (v) => logo.worldPosition(null, v),
+    logoCenter: (v) => (logo.visible ? logo.worldPosition(null, v) : null),
     insetBottom,
   });
   if (noUI) bubble.enabled = false;
@@ -133,7 +138,7 @@ async function main() {
   window.addEventListener('resize', layout);
   layout();
 
-  // Speech bubbles + heart effect hooked to what the fox does.
+  // Speech bubbles + heart effect hooked to what the fox does; the logo comes and goes with it.
   animator.on((type, d) => {
     if (type === 'clip') {
       const line = LINES[d.intent];
@@ -142,6 +147,10 @@ async function main() {
     } else if (type === 'state' && d.to === 'Away') {
       bubble.clear();
       heartFx.clear();
+    } else if (type === 'presence') {
+      if (d.mode === 'popIn') logo.popIn(reducedMotion ? 0 : LOGO_IN_DELAY);
+      else if (d.mode === 'popOut') logo.popOut(reducedMotion ? 0 : LOGO_OUT_DELAY);
+      else logo.setShown(d.mode === 'shown');
     }
   });
 
@@ -159,15 +168,15 @@ async function main() {
     foxShadow.visible = fox.root.visible;
   }
 
-  /** Fox scale / visibility from the animator's presence (pop-in, shrink-away, hidden). */
+  /** Fox scale / visibility from the animator's presence (pop in, pop away, hidden). */
   function applyPresence() {
     const p = animator.presence;
     let s = 1;
     if (p.mode === 'popIn') {
       const x = Math.min(1, p.t / POP_IN);
       s = reducedMotion ? x : easeOutBack(x);
-    } else if (p.mode === 'fadeOut') {
-      const x = Math.min(1, p.t / FADE_OUT);
+    } else if (p.mode === 'popOut') {
+      const x = Math.min(1, p.t / POP_OUT);
       s = 1 - (reducedMotion ? x : easeInBack(x));
     } else if (p.mode === 'hidden') s = 0;
     fox.root.scale.setScalar(Math.max(0.001, s));
@@ -246,7 +255,7 @@ async function main() {
     setMaxDelta(s) { maxDelta = s; },
     setFixedStep(s) { fixedStep = s; acc = 0; },
     finishIntro() {
-      animator.presence = { mode: 'shown', t: 0 };
+      animator.setPresence('shown');
       applyPresence();
     },
   };
@@ -302,7 +311,7 @@ async function main() {
     const a = twoD?.app;
     if (!a) return null;
     if (name === 'TypeDemo') return a.request('Type');
-    if (name === 'Presence') return a.request(a.state === 'Away' ? 'Enter' : 'Exit');
+    if (name === 'Presence') return a.request(a.state === 'Away' || a.state === 'Exiting' ? 'Enter' : 'Exit');
     return a.request(name);
   }
 
@@ -360,7 +369,7 @@ async function main() {
 
   // ---- warm-up: compile every program (incl. shadow + sprite) before the first real frame ----
   fox.root.scale.setScalar(0.001);
-  logo.startPop(0.35);
+  logo.popIn(1); // tiny but visible: compiled, not seen
   logo.update(0);
   keyboard.group.visible = keyboard.shadow.visible = true;
   heartFx.group.visible = true;
@@ -371,7 +380,7 @@ async function main() {
   dozeFx.clear();
 
   animator.toIdle(0);
-  animator.enter({ intro: true }); // hop in (Enter clip) or pop in + Wave
+  animator.enter({ intro: true }); // pop in out of thin air + Wave, the logo a beat later
   applyPresence();
   app.startLoop();
   installDebug(app);

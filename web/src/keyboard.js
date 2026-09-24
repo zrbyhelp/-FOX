@@ -28,8 +28,8 @@ const COLORS = {
 
 const POP_IN = 0.42;
 const POP_OUT = 0.3;
-const PRESS_DEPTH = 0.0036;
 const MIN_PRESS = 0.075; // s a key stays down at least (visible even for very short taps)
+const DESIGN_W = 0.34; // width the cap / margin / effect sizes below were drawn for (scaled from it)
 
 const easeOutBack = (x, s = 1.9) => 1 + (s + 1) * (x - 1) ** 3 + s * (x - 1) ** 2;
 const easeInBack = (x, s = 1.7) => (s + 1) * x ** 3 - s * x ** 2;
@@ -157,12 +157,13 @@ class Glyphs {
     return tex;
   }
 
-  spawn(ch, pos, rng, toward) {
+  spawn(ch, pos, rng, toward, size = 0.05) {
     const s = this.pool.find((p) => p.userData.life < 0) || this.pool.reduce((a, b) => (a.userData.life > b.userData.life ? a : b));
     s.material.map = this.texture(ch);
     s.material.needsUpdate = true;
     s.position.copy(pos).addScaledVector(toward, 0.06); // in front of the paws
     s.userData.life = 0;
+    s.userData.size = size;
     s.userData.vel.set((rng() - 0.5) * 0.06, 0.17 + rng() * 0.05, 0).addScaledVector(toward, 0.04);
     s.visible = true;
   }
@@ -176,7 +177,7 @@ class Glyphs {
       s.position.addScaledVector(u.vel, dt);
       u.vel.multiplyScalar(Math.exp(-1.5 * dt));
       const l = u.life;
-      const sc = 0.05 * Math.min(1, l * 6) * (1 - 0.3 * l);
+      const sc = u.size * Math.min(1, l * 6) * (1 - 0.3 * l);
       s.scale.set(sc, sc, sc);
       s.material.opacity = Math.min(1, (1 - l) * 2.5);
     }
@@ -189,11 +190,12 @@ class Glyphs {
 
 export class MagicKeyboard {
   constructor({ spec, scene, rng = Math.random, reducedMotion = false }) {
-    const k = spec.keyboard?.gltf || { position: [0, 0.235, 0.255], size: [0.34, 0.028, 0.13], tiltDeg: -10 };
+    const k = spec.keyboard?.gltf || { position: [0, 0.222, 0.29], size: [0.48, 0.034, 0.18], tiltDeg: -12 };
     this.rng = rng;
     this.reducedMotion = reducedMotion;
     const [W, H, D] = k.size;
     this.size = { W, H, D };
+    this.k = W / DESIGN_W; // detail scale: caps, gaps, sparkles and letters grow with the keyboard
     this.home = new THREE.Vector3().fromArray(k.position);
 
     this.group = new THREE.Group(); // position + float
@@ -210,7 +212,7 @@ export class MagicKeyboard {
       color: COLORS.base, roughness: 0.42, clearcoat: 0.35, clearcoatRoughness: 0.3,
       specularIntensity: 0.4, sheen: 0.3, sheenRoughness: 0.6, sheenColor: new THREE.Color(0xffffff),
     });
-    const base = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 4, Math.min(H * 0.48, 0.013)), baseMat);
+    const base = new THREE.Mesh(new RoundedBoxGeometry(W, H, D, 4, Math.min(H * 0.48, 0.013 * this.k)), baseMat);
     base.name = 'KeyboardBase';
     base.castShadow = true;
     base.receiveShadow = true;
@@ -245,23 +247,27 @@ export class MagicKeyboard {
   }
 
   buildKeys(W, H, D) {
-    const mx = 0.012;
-    const mz = 0.011;
+    const k = this.k;
+    const mx = 0.012 * k;
+    const mz = 0.011 * k;
     const u = (W - 2 * mx) / UNITS;
     const pitch = (D - 2 * mz) / ROWS.length;
-    const gap = 0.0042;
-    const capH = 0.0085;
-    const y = H / 2 + capH / 2 - 0.0032; // caps sit in the top plate
+    const gap = 0.0042 * k;
+    const capH = 0.0085 * Math.min(k, H / 0.028);
+    const y = H / 2 + capH / 2 - 0.38 * capH; // caps sit in the top plate
+    this.capTop = y + capH / 2;
+    this.pressDepth = 0.42 * capH;
+    this.rowZ = (r) => D / 2 - mz - pitch * (r + 0.5);
     this.keys = [];
     this.byCode = new Map();
     const geos = new Map();
     const geoFor = (w) => {
-      if (!geos.has(w)) geos.set(w, new RoundedBoxGeometry(w * u - gap, capH, pitch - gap, 2, 0.0034));
+      if (!geos.has(w)) geos.set(w, new RoundedBoxGeometry(w * u - gap, capH, pitch - gap, 2, 0.0034 * k));
       return geos.get(w);
     };
     ROWS.forEach((row, r) => {
       // row 0 (digits) is farthest from the fox (+z), the typist's left is +x
-      const z = D / 2 - mz - pitch * (r + 0.5);
+      const z = this.rowZ(r);
       let x = W / 2 - mx;
       for (const item of row) {
         const key = typeof item === 'string' ? { codes: [item] } : Array.isArray(item) ? { codes: item } : { ...item };
@@ -349,8 +355,8 @@ export class MagicKeyboard {
       const p = this.body.localToWorld(k.pos.clone());
       p.y += 0.012;
       const ch = glyphFor(code);
-      if (ch) this.glyphs.spawn(ch, p, this.rng, this.viewDir);
-      else this.sparkles.spawn(p, new THREE.Vector3((this.rng() - 0.5) * 0.08, 0.12 + this.rng() * 0.06, 0.03), { size: 0.014, dur: 0.6, rng: this.rng });
+      if (ch) this.glyphs.spawn(ch, p, this.rng, this.viewDir, 0.05 * Math.min(1.3, this.k));
+      else this.sparkles.spawn(p, new THREE.Vector3((this.rng() - 0.5) * 0.08, 0.12 + this.rng() * 0.06, 0.03), { size: 0.014 * Math.sqrt(this.k), dur: 0.6, rng: this.rng });
     }
     return k.pos.x >= 0 ? 'L' : 'R';
   }
@@ -387,14 +393,25 @@ export class MagicKeyboard {
     return this.group.getWorldPosition(v);
   }
 
+  /**
+   * Where a paw taps (the keyboard's parent space, at rest: no float, no pop): the top of the
+   * home row under the fox's left ('L', +x) or right paw. Aimed at by the typing fallback.
+   */
+  tapPoint(side, out = new THREE.Vector3()) {
+    const x = (side === 'L' ? 1 : -1) * this.size.W * 0.3;
+    out.set(x, this.capTop, this.rowZ(2)).applyAxisAngle(new THREE.Vector3(1, 0, 0), this.tilt.rotation.x);
+    return out.add(this.home);
+  }
+
   burst(n) {
     const { W, D } = this.size;
     const c = this.home;
+    const sz = Math.sqrt(this.k); // bigger keyboard: a wider ring of slightly bigger stars
     for (let i = 0; i < n; i++) {
       const a = (i / n) * Math.PI * 2 + this.rng() * 0.4;
       const p = new THREE.Vector3(c.x + Math.cos(a) * W * 0.55, c.y + (this.rng() - 0.3) * 0.05, c.z + Math.sin(a) * D * 0.7);
-      const v = new THREE.Vector3(Math.cos(a) * 0.22, 0.1 + this.rng() * 0.2, Math.sin(a) * 0.16);
-      this.sparkles.spawn(p, v, { size: 0.016 + this.rng() * 0.016, dur: 0.55 + this.rng() * 0.4, rng: this.rng });
+      const v = new THREE.Vector3(Math.cos(a) * 0.22 * sz, 0.1 + this.rng() * 0.2, Math.sin(a) * 0.16 * sz);
+      this.sparkles.spawn(p, v, { size: (0.016 + this.rng() * 0.016) * sz, dur: 0.55 + this.rng() * 0.4, rng: this.rng });
     }
   }
 
@@ -428,8 +445,10 @@ export class MagicKeyboard {
     }
     this.scale = s;
     this.body.scale.setScalar(Math.max(0.001, s));
+    // pop-in wobble: mostly a roll; the yaw stays small so the wide keyboard's back corners never
+    // swing into the fox's belly
     const wob = this.mode === 'in' && !this.reducedMotion ? (1 - Math.min(1, this.t / POP_IN)) : 0;
-    this.body.rotation.set(0, 0.5 * wob * Math.sin(this.t * 14), 0.12 * wob);
+    this.body.rotation.set(0, 0.07 * wob * Math.sin(this.t * 14), 0.12 * wob * Math.cos(this.t * 11));
     this.group.position.copy(this.home);
     this.group.position.y += 0.0025 * Math.sin(this.time * 2.2);
     this.shadow.position.set(this.home.x, 0.002, this.home.z);
@@ -442,7 +461,7 @@ export class MagicKeyboard {
       const target = down ? 1 : 0;
       if (target === 0 && k.press === 0) continue;
       k.press = down ? Math.min(1, k.press + dt / 0.03) : Math.max(0, k.press - dt / 0.09);
-      this._m.makeTranslation(k.pos.x, k.pos.y - PRESS_DEPTH * k.press, k.pos.z);
+      this._m.makeTranslation(k.pos.x, k.pos.y - this.pressDepth * k.press, k.pos.z);
       k.mesh.setMatrixAt(k.index, this._m);
       k.mesh.setColorAt(k.index, this._c.copy(k.color).lerp(this._pressedColor, 0.75 * k.press * (k.accent ? 0.4 : 1)));
       k.mesh.instanceMatrix.needsUpdate = true;

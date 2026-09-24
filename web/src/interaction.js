@@ -47,7 +47,8 @@ export class Interaction {
       this.tailColliders.push(m);
     }
     if (this.colliders.tail) this.tailColliders.push(this.colliders.tail);
-    this.pickables = [...Object.values(this.colliders), ...this.tailColliders.filter((m) => m !== this.colliders.tail), logo.proxy];
+    this.foxPickables = [...Object.values(this.colliders), ...this.tailColliders.filter((m) => m !== this.colliders.tail)];
+    this.pickables = [...this.foxPickables, logo.proxy];
 
     this.pointer = null; // last pointer {x, y, type} in client px
     this.pointerAt = -Infinity; // time of last pointer movement (s)
@@ -62,7 +63,7 @@ export class Interaction {
     this.lookVec = new THREE.Vector3();
     this.hoverDirty = false;
     this.followPointer = true; // toolbar toggle 跟随鼠标
-    this.paused = false; // fox away: only the logo reacts
+    this.paused = false; // fox away (the logo left with it): nothing reacts
     this.typing = null; // TypingController (set by main.js)
     this.hoverPart = null;
     this.lastTailFlick = -Infinity;
@@ -86,7 +87,10 @@ export class Interaction {
     const r = this.canvas.getBoundingClientRect();
     this.ndc.set(((clientX - r.left) / r.width) * 2 - 1, -((clientY - r.top) / r.height) * 2 + 1);
     this.raycaster.setFromCamera(this.ndc, this.camera);
-    const hit = this.raycaster.intersectObjects(this.paused ? [this.logo.proxy] : this.pickables, false)[0];
+    // the logo only while it is out (it pops in and away with the fox, hidden while away)
+    const logoOn = this.logo.shown;
+    const targets = this.paused ? (logoOn ? [this.logo.proxy] : []) : logoOn ? this.pickables : this.foxPickables;
+    const hit = this.raycaster.intersectObjects(targets, false)[0];
     if (!hit) return null;
     this.hitPoint.copy(hit.point);
     return hit.object === this.logo.proxy ? 'logo' : hit.object.userData.part;
@@ -221,6 +225,7 @@ export class Interaction {
       case 'body': return a.request(this.rng() < 0.5 ? 'Wave' : 'Shrug');
       case 'tail': return a.request('LookBack');
       case 'logo':
+        if (!this.logo.shown) return null;
         this.logo.activate();
         this.logoFocusUntil = this.time + 4.5;
         return a.request('Reach');
@@ -249,6 +254,12 @@ export class Interaction {
     this.time += dt;
     const p = this.pointer;
 
+    // The logo left (or is leaving): drop its hover, re-pick what is under the pointer.
+    if (this.hoverLogo && !this.logo.shown) {
+      this.hoverLogo = false;
+      this.hoverDirty = true;
+    }
+
     // Hover (mouse only, not while pressing).
     if (this.hoverDirty && !this.down) {
       this.hoverDirty = false;
@@ -269,7 +280,7 @@ export class Interaction {
     const kb = this.typing?.active && this.typing.keyboard.shown;
     if (this.paused) {
       this.procedural.setTarget(null);
-    } else if (this.hoverLogo || this.logo.isActive || this.time < this.logoFocusUntil || this.animator.lookAtLogo) {
+    } else if (this.logo.shown && (this.hoverLogo || this.logo.isActive || this.time < this.logoFocusUntil || this.animator.lookAtLogo)) {
       this.procedural.setTarget(this.logo.worldPosition('Star', this.lookVec));
     } else if (kb) {
       this.procedural.setTarget(this.typing.keyboard.worldCenter(this.lookVec));
