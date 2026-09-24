@@ -70,12 +70,12 @@ def _ear_shape(q, inner=False):
     parts.head_colors paints orange). The cut + scoop leave a thick rounded rim."""
     hw = P["ear_base_width"] / 2
     fz = 0.74                                     # cone flattening front-back (keeps volume)
-    r_tip = 0.028                                 # softly pointed tip
+    r_tip = 0.036                                 # rounded leaf tip
     if inner:
-        rim = 0.026                               # cream rim around a big orange scoop
+        rim = 0.030                               # cream rim all round (tip included)
         qi = q.copy()
         qi[:, 2] = (q[:, 2] - 0.025) / fz
-        cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.042, 0), hw - rim, r_tip * 0.5) * fz
+        cav = S.round_cone(qi, (0, 0.026, 0), (0, EAR_LEN - 0.062, 0), hw - rim, r_tip * 0.45) * fz
         return cav
     qo = q.copy()
     qo[:, 2] = q[:, 2] / fz
@@ -120,7 +120,7 @@ def head_sdf(p):
     return d
 
 
-HEAD_BBOX = ((-0.44, -0.28, 0.36), (0.44, 0.27, 1.10))
+HEAD_BBOX = ((-0.44, -0.28, 0.36), (0.44, 0.27, 1.12))
 
 
 def _leg_column(q):

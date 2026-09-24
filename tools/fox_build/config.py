@@ -72,10 +72,10 @@ P = {
     "chin_z": 0.415,
     "head_top_z": 0.845,
     # ears: base centre on head top-side, tip position; thickness
-    "ear_base": (0.176, 0.016, 0.785),
-    "ear_tip": (0.296, 0.040, 1.012),       # ~28 deg out from vertical, like the art
-    "ear_base_width": 0.250,                # big, tall rounded-point ears (w/h ~0.93)
-    "ear_thickness": 0.078,
+    "ear_base": (0.150, 0.016, 0.800),      # on top of the dome, not out at the corners
+    "ear_tip": (0.272, 0.040, 1.040),       # ~27 deg out from vertical, like the art
+    "ear_base_width": 0.268,                # big rounded-leaf ears (w/h ~1.0)
+    "ear_thickness": 0.080,
     # face anchors (x, z); y is projected onto the head surface at build time
     "eye_xz": (0.130, 0.582),                 # big, wide-set, low on the face (chibi)
     "eye_size": (0.073, 0.087),               # width, height of the open eye
@@ -106,15 +106,15 @@ P = {
 }
 
 # Tail centre-line (cubic Catmull-Rom through these points). Root sits inside the butt on
-# the mid-line; the tail sweeps back (+Y), then up, leaning ~15deg to the fox's LEFT (+X),
-# tip curling slightly forward. Centre-line length ~0.66 (~ +15% vs the reference art).
+# the mid-line; the tail sweeps back and out to the fox's LEFT (+X), rises beside the body so
+# it frames it from the front / front-right (like the art), tip curling forward and in.
 TAIL_SPLINE = [
     (0.000, 0.105, 0.165),
-    (0.022, 0.245, 0.140),
-    (0.072, 0.352, 0.258),
-    (0.108, 0.378, 0.425),
-    (0.112, 0.332, 0.560),
-    (0.090, 0.270, 0.622),
+    (0.062, 0.228, 0.150),
+    (0.168, 0.296, 0.250),
+    (0.232, 0.298, 0.405),
+    (0.228, 0.248, 0.540),
+    (0.192, 0.190, 0.606),
 ]
 
 # --------------------------------------------------------------------------------------
