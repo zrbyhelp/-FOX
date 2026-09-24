@@ -2,6 +2,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import subprocess
 from pathlib import Path
 
 from . import config as C
@@ -69,3 +72,22 @@ def postprocess_fox(path: Path):
 def write_clips_json(meta: dict, path: Path = C.OUT_CLIPS_JSON):
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(meta, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def compress_glb(src: Path, dst: Path) -> bool:
+    """Meshopt + quantization via @gltf-transform/cli (web devDependency). One quantization
+    volume for the whole scene keeps a single shared skin. Falls back to a plain copy."""
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    web = C.ROOT / "web"
+    cli = web / "node_modules" / ".bin" / ("gltf-transform.cmd" if os.name == "nt" else "gltf-transform")
+    if cli.exists():
+        cmd = [str(cli), "meshopt", str(src), str(dst), "--level", "medium",
+               "--quantization-volume", "scene", "--quantize-color", "12"]
+        r = subprocess.run(cmd, cwd=web, capture_output=True, text=True)
+        if r.returncode == 0 and dst.exists():
+            return True
+        print("[build] meshopt compression failed, copying raw glb:\n" + r.stdout + r.stderr)
+    else:
+        print("[build] @gltf-transform/cli not installed (cd web && npm i) -> copying raw glb")
+    shutil.copyfile(src, dst)
+    return False

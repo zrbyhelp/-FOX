@@ -31,14 +31,14 @@ def _src_hash(*extra):
     return h.hexdigest()[:16]
 
 
-def cached_mesh(name, fn, lo, hi, voxel, edge):
+def cached_mesh(name, fn, lo, hi, voxel, edge, adaptive=False):
     CACHE.mkdir(parents=True, exist_ok=True)
-    key = _src_hash(name, voxel, edge, np.round(lo, 4).tolist(), np.round(hi, 4).tolist())
+    key = _src_hash(name, voxel, edge, adaptive, np.round(lo, 4).tolist(), np.round(hi, 4).tolist())
     path = CACHE / f"{name}_{key}.npz"
     if path.exists():
         d = np.load(path)
         return d["V"], d["F"], d["N"]
-    V, F, N = mesher.mesh_sdf(fn, lo, hi, voxel=voxel, target_edge=edge, name=name)
+    V, F, N = mesher.mesh_sdf(fn, lo, hi, voxel=voxel, target_edge=edge, adaptive=adaptive, name=name)
     np.savez_compressed(path, V=V, F=F, N=N)
     return V, F, N
 
@@ -53,7 +53,7 @@ def _rigid(name, mesh, bone, material=None, materials=None, ids=None, color=None
 def build_parts():
     parts = []
     # ---- head
-    V, F, N = cached_mesh("Head", SH.head_sdf, *SH.HEAD_BBOX, VOXEL["Head"], EDGE["Head"])
+    V, F, N = cached_mesh("Head", SH.head_sdf, *SH.HEAD_BBOX, VOXEL["Head"], EDGE["Head"], adaptive=True)
     parts.append(Part("Head", V, F, normals=N, colors=PT.head_colors(V, N), weights=PT.head_weights(V)))
     # ---- body
     V, F, N = cached_mesh("Body", SH.body_sdf, *SH.BODY_BBOX, VOXEL["Body"], EDGE["Body"])

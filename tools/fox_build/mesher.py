@@ -32,7 +32,7 @@ def signed_volume(V, F):
 
 
 def mesh_sdf(fn, lo, hi, voxel=0.003, target_edge=0.007, keep_largest=True,
-             project_iters=3, remesh_iters=6, name="part", verbose=True):
+             project_iters=3, remesh_iters=6, adaptive=False, name="part", verbose=True):
     from skimage import measure
     import pymeshlab
 
@@ -53,7 +53,7 @@ def mesh_sdf(fn, lo, hi, voxel=0.003, target_edge=0.007, keep_largest=True,
     if keep_largest:
         ms.meshing_remove_connected_component_by_face_number(mincomponentsize=200)
     ms.meshing_isotropic_explicit_remeshing(targetlen=pymeshlab.PureValue(target_edge),
-                                            iterations=remesh_iters, adaptive=False)
+                                            iterations=remesh_iters, adaptive=adaptive)
     m = ms.current_mesh()
     V = m.vertex_matrix().astype(np.float64)
     F = m.face_matrix().astype(np.int64)

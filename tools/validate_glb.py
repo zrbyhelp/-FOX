@@ -1,6 +1,8 @@
 """Validate web/public/models/{fox,logo}.glb against spec.json and budgets.
 
     .venv/bin/python tools/validate_glb.py [path/to/fox.glb] [--khronos]
+Defaults to the uncompressed build/fox.raw.glb (pygltflib cannot decode meshopt buffers);
+the shipped compressed web/public/models/fox.glb is checked structurally.
 Exit code 1 on any failure.
 """
 from __future__ import annotations
@@ -128,6 +130,17 @@ def validate_logo(path: Path, r: Report):
     r.check({"LogoCube", "LogoStar"} <= {m.name for m in g.materials}, "logo materials present")
 
 
+def validate_shipped(path: Path, r: Report):
+    """Structure of the compressed glb the web app loads (names, clips, one shared skin)."""
+    g = pygltflib.GLTF2().load(str(path))
+    names = {n.name for n in g.nodes}
+    r.check(all(b["name"] in names for b in C.SPEC["bones"]), f"{path.name}: bones present")
+    r.check({a.name for a in g.animations} >= set(C.CLIP_NAMES), f"{path.name}: clips present")
+    r.check(len(g.skins) == 1, f"{path.name}: single shared skin", f"{len(g.skins)} skins")
+    size = path.stat().st_size
+    r.check(size <= 2_000_000, f"{path.name}: compressed size", f"{size / 1e6:.2f} MB")
+
+
 def khronos(path: Path, r: Report):
     try:
         out = subprocess.run(["npx", "--yes", "gltf-validator", str(path), "-o"], capture_output=True,
@@ -142,11 +155,13 @@ def khronos(path: Path, r: Report):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith("--")]
-    fox = Path(args[0]) if args else C.OUT_GLB
+    fox = Path(args[0]) if args else C.RAW_GLB
     r = Report()
     print(f"validating {fox}")
     validate_fox(fox, r)
     validate_logo(C.OUT_LOGO_GLB, r)
+    if not args and C.OUT_GLB.exists():
+        validate_shipped(C.OUT_GLB, r)
     if "--khronos" in sys.argv:
         khronos(fox, r)
         khronos(C.OUT_LOGO_GLB, r)

@@ -24,12 +24,12 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   const scene = new THREE.Scene();
   const pmrem = new THREE.PMREMGenerator(renderer);
   scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
-  scene.environmentIntensity = 0.8;
+  scene.environmentIntensity = 0.62;
   pmrem.dispose();
 
   // Key: upper-left front, warm, soft shadows.
-  const key = new THREE.DirectionalLight(0xfff0e0, 1.7);
-  key.position.set(-1.5, 3.8, 2.0);
+  const key = new THREE.DirectionalLight(0xfff0e0, 2.1);
+  key.position.set(-1.1, 5.2, 2.2); // high key: short, soft shadow like the reference renders
   key.target.position.set(-0.1, 0.3, 0);
   key.castShadow = true;
   const sm = low ? 1024 : 2048;
@@ -39,10 +39,10 @@ export function createStage(canvas, { spec, quality = 'high', debug = false }) {
   key.shadow.normalBias = 0.015;
   key.shadow.radius = low ? 10 : 18;
   key.shadow.blurSamples = low ? 12 : 20;
-  key.shadow.intensity = 0.85;
+  key.shadow.intensity = 0.6;
   scene.add(key, key.target);
 
-  const fill = new THREE.DirectionalLight(0xf2f0ff, 0.75); // cool fill from the right
+  const fill = new THREE.DirectionalLight(0xf2f0ff, 0.5); // cool fill from the right
   fill.position.set(2.2, 1.2, 1.6);
   const rim = new THREE.DirectionalLight(0xffffff, 1.1); // back rim for the velvet silhouette
   rim.position.set(0.6, 1.9, -2.6);

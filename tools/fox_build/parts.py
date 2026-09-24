@@ -104,10 +104,10 @@ def arm_colors(V, N, side="L"):
     L1 = np.linalg.norm(el - sh); L2 = L1 + np.linalg.norm(wr - el)
     Lt = L2 + np.linalg.norm(tip - wr)
     cream = C.linear("fur")
-    g1 = S.smoothstep(L2 - 0.045, L2 + 0.005, s)       # cream -> light orange
-    g2 = S.smoothstep(L2 + 0.0, Lt + 0.02, s)          # light -> orange
+    g1 = S.smoothstep(L2 - 0.055, L2 - 0.005, s)       # cream -> light orange
+    g2 = S.smoothstep(L2 - 0.010, Lt - 0.015, s)       # light -> orange (saturated tips)
     col = _mix(np.tile(cream, (len(V), 1)), C.linear("orange_light"), g1)
-    return _mix(col, C.linear("orange"), 0.85 * g2)
+    return _mix(col, C.linear("orange"), g2)
 
 
 def arm_weights(V, side="L"):

@@ -202,7 +202,9 @@ BUDGET = {
 }
 
 # Output paths
-OUT_GLB = ROOT / "web" / "public" / "models" / "fox.glb"
+OUT_GLB = ROOT / "web" / "public" / "models" / "fox.glb"          # meshopt-compressed
+RAW_GLB = ROOT / "build" / "fox.raw.glb"                           # uncompressed (validation)
+RAW_LOGO_GLB = ROOT / "build" / "logo.raw.glb"
 OUT_LOGO_GLB = ROOT / "web" / "public" / "models" / "logo.glb"
 OUT_BLEND = ROOT / "models" / "fox.blend"
 OUT_CLIPS_JSON = ROOT / "web" / "public" / "models" / "clips.json"

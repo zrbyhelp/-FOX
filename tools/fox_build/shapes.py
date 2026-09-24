@@ -67,11 +67,11 @@ def _ear_shape(q, inner=False):
     if inner:
         # recess volume: inset outline, from (front face - depth) forward
         d2 = _ear_outline(q, inset=0.036)
-        d2 = np.maximum(d2, 0.03 - q[:, 1])           # recess starts a bit above the base
+        d2 = S.smax(d2, 0.03 - q[:, 1], 0.02)          # recess starts a bit above the base
         h = _ear_half_thickness(q[:, 1])
         depth = 0.020 * (1 - 0.5 * np.clip(q[:, 1] / EAR_LEN, 0, 1))
         dz = (h - depth) - q[:, 2]
-        return np.maximum(d2, dz)
+        return S.smax(d2, dz, 0.010)                   # rounded rim edge (no hard crease)
     d2 = _ear_outline(q)
     h = _ear_half_thickness(q[:, 1])
     rr = 0.012
@@ -116,7 +116,7 @@ def ear_inner(p):
 
 def head_sdf(p):
     d = S.smin(head_core(p), ear_outer(p), 0.035)
-    d = S.ssub(d, ear_inner(p), 0.008)
+    d = S.ssub(d, ear_inner(p), 0.012)
     d = S.smin(d, ear_nub(p), 0.010)
     return d
 

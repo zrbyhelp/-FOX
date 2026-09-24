@@ -4,7 +4,8 @@
     .venv/bin/python tools/build.py --blockout   # capsule stand-ins on the real skeleton
     .venv/bin/python tools/build.py --no-logo --no-blend
 
-Outputs: web/public/models/fox.glb, logo.glb, clips.json and models/fox.blend.
+Outputs: web/public/models/fox.glb + logo.glb (meshopt-compressed), clips.json,
+models/fox.blend, and uncompressed build/fox.raw.glb + build/logo.raw.glb for validation.
 Holds an exclusive lock (.build.lock) so concurrent builds cannot clobber each other.
 """
 from __future__ import annotations
@@ -53,12 +54,20 @@ def build_fox(bpy, blockout: bool, save_blend: bool, out_name: str = "fox"):
     anim.reset_pose(arm)
     print(f"[build] clips: {list(meta)} ({time.time() - t1:.1f}s)")
 
-    out_glb = C.OUT_GLB if out_name == "fox" else C.OUT_GLB.parent / "dev" / f"{out_name}.glb"
-    out_clips = C.OUT_CLIPS_JSON if out_name == "fox" else out_glb.with_suffix(".clips.json")
-    export.export_glb(bpy, out_glb)
-    export.postprocess_fox(out_glb)
-    export.write_clips_json(meta, out_clips)
-    print(f"[build] wrote {out_glb} ({out_glb.stat().st_size / 1e6:.2f} MB)")
+    if out_name == "fox":
+        export.export_glb(bpy, C.RAW_GLB)
+        export.postprocess_fox(C.RAW_GLB)
+        export.compress_glb(C.RAW_GLB, C.OUT_GLB)
+        export.write_clips_json(meta, C.OUT_CLIPS_JSON)
+        out_glb = C.OUT_GLB
+        print(f"[build] raw {C.RAW_GLB.stat().st_size / 1e6:.2f} MB -> {out_glb} "
+              f"({out_glb.stat().st_size / 1e6:.2f} MB)")
+    else:   # dev scratch output: uncompressed
+        out_glb = C.OUT_GLB.parent / "dev" / f"{out_name}.glb"
+        export.export_glb(bpy, out_glb)
+        export.postprocess_fox(out_glb)
+        export.write_clips_json(meta, out_glb.with_suffix(".clips.json"))
+        print(f"[build] wrote {out_glb} ({out_glb.stat().st_size / 1e6:.2f} MB)")
     if save_blend and out_name == "fox":
         C.OUT_BLEND.parent.mkdir(parents=True, exist_ok=True)
         bpy.ops.wm.save_as_mainfile(filepath=str(C.OUT_BLEND), compress=True)
@@ -74,8 +83,9 @@ def build_logo(bpy):
     bpy.ops.wm.read_factory_settings(use_empty=True)
     logo.build(bpy)
     from fox_build import export
-    export.export_glb(bpy, C.OUT_LOGO_GLB, export_animations=False, export_skins=False)
-    print(f"[build] wrote {C.OUT_LOGO_GLB}")
+    export.export_glb(bpy, C.RAW_LOGO_GLB, export_animations=False, export_skins=False)
+    export.compress_glb(C.RAW_LOGO_GLB, C.OUT_LOGO_GLB)
+    print(f"[build] wrote {C.OUT_LOGO_GLB} ({C.OUT_LOGO_GLB.stat().st_size / 1e3:.0f} KB)")
 
 
 @contextlib.contextmanager
