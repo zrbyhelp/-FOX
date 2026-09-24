@@ -130,13 +130,18 @@ await page.mouse.move(5, 5); // park the pointer away from the fox
   await expectClip('click head -> Happy', 'Happy');
   const b = await waitFor((s) => s.bubble === '嘿嘿,好开心!', 2500, 50);
   record('Happy -> speech bubble', b.bubble === '嘿嘿,好开心!' ? 'PASS' : 'FAIL', `bubble=${b.bubble}`);
-  const box = await page.$eval('.bubble', (e) => {
-    const r = e.querySelector('.bubble-body').getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height, hidden: e.hidden, text: e.textContent };
+  // the 3D bubble (bubble3d.js) in the scene: its projected full-size rect + line count
+  const box = await page.evaluate(() => {
+    const app = window.__fox._app;
+    const r = app.bubble.screenRect();
+    const inScene = !!app.stage.scene.getObjectByName('SpeechBubble')?.visible;
+    const live = document.querySelector('[aria-live="polite"].sr-only')?.textContent ?? null;
+    return r && { ...r, inScene, live, text: app.bubble.text, dom: !document.querySelector('.bubble').hidden };
   });
   const vw = page.viewportSize();
-  const onScreen = !box.hidden && box.x >= 0 && box.y >= 0 && box.x + box.w <= vw.width && box.y + box.h <= vw.height && box.h < 70;
-  record('bubble on screen, <= 2 lines', onScreen ? 'PASS' : 'FAIL', `${box.text} @ ${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.w)}x${Math.round(box.h)}`);
+  const onScreen = !!box && box.visible && box.inScene && !box.dom && box.x >= 0 && box.y >= 0 && box.x + box.w <= vw.width && box.y + box.h <= vw.height && box.lines <= 2;
+  record('bubble on screen, <= 2 lines', onScreen ? 'PASS' : 'FAIL', box ? `3D ${box.text} @ ${Math.round(box.x)},${Math.round(box.y)} ${Math.round(box.w)}x${Math.round(box.h)}, ${box.lines} line(s)${box.dom ? ', DOM bubble shown too' : ''}` : 'no bubble');
+  record('bubble line in the aria-live region', box && box.live === box.text ? 'PASS' : 'FAIL', `live=${box?.live}`);
   let open = 0;
   let talking = false;
   const t0 = Date.now();

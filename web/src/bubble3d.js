@@ -35,7 +35,7 @@ const WIDTH_STEP = 0.01; // geometry cache buckets
 // Tail: pointing down from its pivot (inside the body, PIVOT_UP above the bottom edge), its tip
 // bent a little towards the head. As thick as the body with its front face a hair behind the
 // body's: the flat front flows on into the tail, only its sides crease into the rim.
-const TAIL = { base: 0.09, tip: 0.032, len: 0.05, up: 0.04, wall: WALL, bevelT: BEVEL_T, bevelS: 0.0145, sink: 0.0015, bend: 0.012 };
+const TAIL = { base: 0.1, tip: 0.032, len: 0.05, up: 0.03, wall: WALL, bevelT: BEVEL_T, bevelS: 0.0145, sink: 0.0015, bend: 0.012 };
 const TAIL_INSET = RADIUS + 0.022; // tail base from the body's end: on the straight bottom edge
 const PIVOT_UP = 0.024;
 const TAIL_ROOM = 0.03; // how far the tail hangs below the body (layout)
@@ -197,7 +197,7 @@ function tailShape() {
     const c = curve.getPoint(u);
     const d = curve.getTangent(u);
     n = new THREE.Vector2(-d.y, d.x); // left of the direction of travel
-    const w = THREE.MathUtils.lerp(base, tip, Math.pow(u, 0.9)) / 2;
+    const w = THREE.MathUtils.lerp(base, tip, Math.pow(u, 1.3)) / 2; // flared where it leaves the body
     left.push(c.clone().addScaledVector(n, w));
     right.push(c.clone().addScaledVector(n, -w));
   }
@@ -208,7 +208,13 @@ function tailShape() {
     const a = a0 - (Math.PI * k) / 12;
     tipPts.push(new THREE.Vector2(p2.x + Math.cos(a) * (tip / 2), p2.y + Math.sin(a) * (tip / 2)));
   }
-  return { shape: new THREE.Shape([...left, ...tipPts, ...right.reverse()]), tipCentre: p2 };
+  // rounded base (hidden in the body's flat face whatever the tail's angle)
+  const basePts = [];
+  for (let k = 1; k < 8; k++) {
+    const t = k / 8;
+    basePts.push(new THREE.Vector2(THREE.MathUtils.lerp(right[0].x, left[0].x, t), up + Math.sin(Math.PI * t) * base * 0.22));
+  }
+  return { shape: new THREE.Shape([...left, ...tipPts, ...right.reverse(), ...basePts]), tipCentre: p2 };
 }
 
 // ---------------------------------------------------------------------------------------------
