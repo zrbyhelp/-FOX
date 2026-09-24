@@ -89,46 +89,50 @@ def ellipsoid_mesh(center, R, radii, nu=24, nv=16):
 
 
 # ------------------------------------------------------------------ tail
-def _profile(t):
+_TIP_A = 0.93      # the tip dome starts here (normalised arc length)
+
+
+def _profile_dense():
+    """Radius over a fixed dense arc-length grid: the polyline profile softened with a moving
+    average (in arc-length units, so it no longer depends on how the caller samples t), ending
+    in a soft, rounded point (no pinched nub)."""
+    s = np.linspace(0, 1, 2001)
     pts = np.array(P["tail_radius_profile"])
-    r = np.interp(t, pts[:, 0], pts[:, 1])
-    # soften the polyline profile with a short moving average
-    k = 5
+    r = np.interp(s, pts[:, 0], pts[:, 1])
+    k = 40                                   # +-2% of the tail length
     rp = np.pad(r, (k, k), mode="edge")
     r = np.convolve(rp, np.ones(2 * k + 1) / (2 * k + 1), mode="same")[k:-k]
-    # pointed (not blunt) tip: only the last ~2% is rounded off
-    tip = t > 0.975
-    r[tip] = np.minimum(r[tip], 0.13 * np.sqrt(np.clip(1 - t[tip], 0, 1)))
-    return r
+    ra = np.interp(_TIP_A, s, r)
+    u = np.clip((s - _TIP_A) / (1 - _TIP_A), 0, 1)
+    dome = ra * np.maximum(1 - u ** 1.5, 0) ** 0.6       # rounded (vertical tangent) at u = 1
+    return s, np.where(s > _TIP_A, np.minimum(r, dome), r)
 
 
-def tail_mesh(n_rings=72, n_seg=32, r_end=0.013, cap_rings=5):
-    """Tail tube along the spline; the pointed tip ends in a small hemispherical cap (a bare
-    pole vertex gave a degenerate normal that rendered as a white dot)."""
+def _profile(t):
+    s, r = _profile_dense()
+    return np.interp(t, s, r)
+
+
+def tail_mesh(n_rings=80, n_seg=32):
+    """Tail tube along the spline, closed by the rounded tip dome: rings get dense toward the
+    tip and end in a pole whose fan is nearly flat (smooth normal, no white dot, no nub)."""
     sp = Spline(C.TAIL_SPLINE)
-    s = np.linspace(0, 1, 4000)
-    r_all = _profile(s)
-    t_end = s[np.nonzero((r_all < r_end) & (s > 0.8))[0][0]]
     u = np.linspace(0, 1, n_rings)
-    t = (1 - (1 - u) ** 1.25) * t_end            # denser toward the tip
+    t = 1 - (1 - u) ** 1.6                       # denser toward the tip
+    t = t[:-1] * (1 - 1e-4)                      # the last ring sits just before the pole
     C_ = sp.point_at_arclength(t)
     T = sp.tangent_at_arclength(t)
     N, B = transport_frames(T, np.array([1.0, 0, 0]))
     r = _profile(t)
     th = np.linspace(0, 2 * np.pi, n_seg, endpoint=False)
     flat = P["tail_flatten"]
-    rings = [C_[i] + r[i] * (np.cos(th)[:, None] * N[i] * flat + np.sin(th)[:, None] * B[i]) for i in range(n_rings)]
-    tv = [np.full(n_seg, t[i]) for i in range(n_rings)]
-    re = r[-1]
-    for k in range(1, cap_rings):
-        a = k / cap_rings * np.pi / 2
-        c = C_[-1] + T[-1] * re * np.sin(a)
-        rings.append(c + re * np.cos(a) * (np.cos(th)[:, None] * N[-1] * flat + np.sin(th)[:, None] * B[-1]))
-        tv.append(np.full(n_seg, 1.0))
+    rings = [C_[i] + r[i] * (np.cos(th)[:, None] * N[i] * flat + np.sin(th)[:, None] * B[i]) for i in range(len(t))]
+    tv = [np.full(n_seg, t[i]) for i in range(len(t))]
     V = np.vstack(rings)
     nr = len(rings)
     F = grid_faces(nr, n_seg)
-    V, F = cap(V, F, (nr - 1) * n_seg, n_seg, (C_[-1] + T[-1] * re)[None], flip=False)
+    pole = sp.point_at_arclength(np.array([1.0]))
+    V, F = cap(V, F, (nr - 1) * n_seg, n_seg, pole, flip=False)
     V, F = cap(V, F, 0, n_seg, (C_[0] - T[0] * 0.03)[None], flip=True)
     tv = np.concatenate(tv + [np.array([1.0, 0.0])])
     if np.einsum("ij,ij->i", V[F[:, 0]] - V.mean(0), np.cross(V[F[:, 1]] - V[F[:, 0]], V[F[:, 2]] - V[F[:, 0]])).sum() < 0:
