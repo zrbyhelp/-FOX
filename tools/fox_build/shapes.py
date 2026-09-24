@@ -92,8 +92,9 @@ def ear_local(p):
 def head_core(p):
     """Head without ears."""
     q = S.mirror_x(p)
-    skull = S.ellipsoid(p, (0, 0.0, 0.656), (0.296, 0.228, 0.206))     # wide, gently domed (mochi)
-    cheeks = S.ellipsoid(p, (0, -0.020, 0.560), (0.312, 0.200, 0.156))
+    # wide, gently domed (mochi), widest around the eyes; the cheeks only fill the lower face
+    skull = S.ellipsoid(p, (0, 0.0, 0.646), (0.310, 0.230, 0.212))
+    cheeks = S.ellipsoid(p, (0, -0.020, 0.560), (0.298, 0.200, 0.150))
     d = S.smin(skull, cheeks, 0.09)
     muzzle = S.ellipsoid(p, (0, -0.160, 0.547), (0.090, 0.058, 0.055))
     d = S.smin(d, muzzle, 0.06)

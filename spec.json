@@ -428,6 +428,12 @@
       ],
       "fov": 30
     },
+    "ref34r": {
+      "_comment": "the reference art's angle: fox's right-front, a little above",
+      "position": [-1.0, 1.0, 2.7],
+      "target": [-0.12, 0.46, 0.0],
+      "fov": 30
+    },
     "front": {
       "position": [
         0.0,
