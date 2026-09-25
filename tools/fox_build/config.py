@@ -32,7 +32,6 @@ COLORS = {
     "orange_light": "#F9B07A", # light end of orange gradients
     "tail_tip": "#F2904F",
     "sole": "#F6A06A",         # foot soles: lighter than the toes (they face away from the key light)
-    "sole_pad": "#F08852",     # paw pads (main pad + toe beans), a touch deeper
     "blush": "#F8A994",
     "scarf": "#E86F3E",
     "scarf_square": "#FBF3EC",
